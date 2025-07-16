@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>lysets.slør – 360° Immersive Sphere</title>
+  <style>
+    body, html {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background-color: #000;
+      font-family: Arial, sans-serif;
+    }
+    canvas {
+      width: 100vw;
+      height: 100vh;
+      display: block;
+    }
+    /* Button overlay for requesting motion permission on mobile */
+    #motionBtn {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      padding: 1em 2em;
+      font-size: 1.2em;
+      background-color: rgba(0,0,0,0.8);
+      color: #fff;
+      border: 2px solid #fff;
+      border-radius: 5px;
+      z-index: 1000;
+      cursor: pointer;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="shaderCanvas"></canvas>
+  <button id="motionBtn">Click for Device Motion</button>
+  
+  <script>
+    class OrganicFluidTransition {
+      constructor() {
+        this.canvas = document.getElementById('shaderCanvas');
+        this.gl = this.canvas.getContext('webgl2');
+        if (!this.gl) {
+          alert('Your browser does not support WebGL2');
+          return;
+        }
+
+        // Determine device type (mobile or desktop)
+        this.isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || window.DeviceOrientationEvent;
+        
+        // Build image paths dynamically based on device type (images 2.JPG to 33.JPG)
+        const folder = this.isMobile ? './img/mobile/' : './img/desktop/';
+        this.imagePaths = [];
+        for (let i = 2; i <= 33; i++) {
+          this.imagePaths.push(folder + i + '.JPG');
+        }
+        
+        // For immersive sphere rotation (yaw and pitch)
+        this.yaw = 0;
+        this.pitch = 0;
+        this.isDragging = false;
+        this.lastMousePos = { x: 0, y: 0 };
+
+        // Create the video element for displacement; video files are in the root folder
+        this.video = document.createElement('video');
+        this.video.src = this.isMobile ? "./dispvid4mobile.mp4" : "./dispvid4.mp4";
+        this.video.loop = true;
+        this.video.muted = true;
+        this.video.playsInline = true;
+
+        // Mouse & velocity-based fractal time
+        this.mouseX = 0;
+        this.mouseY = 0;
+        this.lastMouseX = 0;
+        this.lastMouseY = 0;
+        this.lastMouseMoveTime = performance.now() / 1000;
+        this.moveThreshold = 0.1; // Lowered threshold
+
+        // Fractal time
+        this.fractalTime = 0;
+        this.lastFrameTime = performance.now() / 1000;
+
+        // Vertex shader: pass-through that forwards UV coordinates.
+        this.vertexShaderSource = `#version 300 es
+          in vec4 a_position;
+          in vec2 a_texCoord;
+          out vec2 v_texCoord;
+          void main() {
+            gl_Position = a_position;
+            v_texCoord = a_texCoord;
+          }
+        `;
+
+        /* 
+          Fragment shader:
+            1. Computes the spherical blend from the base images.
+            2. Overlays the displacement video as a simple alpha-blended layer.
+            3. Computes a fractal iridescence effect and blends it on top.
+        */
+        this.fragmentShaderSource = `#version 300 es
+          precision highp float;
+          #define PI 3.14159265359
+
+          // Uniforms
+          uniform sampler2D u_image0;
+          uniform sampler2D u_image1;
+          uniform sampler2D u_dispVideo;
+          uniform vec2 u_resolution;
+          uniform float u_time;
+          uniform float u_fractalIntensity;
+          uniform float u_blendMode;
+          uniform float u_yaw;
+          uniform float u_pitch;
+          uniform float u_imageCount;
+
+          in vec2 v_texCoord;
+          out vec4 outColor;
+
+          /////////////////////////////////
+          // Layer 1: Spherical Image Blend
+          /////////////////////////////////
+          vec4 sphericalImageBlend() {
+            // Map fragment coordinate to normalized space (-1 to 1)
+            vec2 normCoord = (gl_FragCoord.xy / u_resolution) * 2.0 - 1.0;
+            normCoord.x *= u_resolution.x / u_resolution.y;
+            vec3 viewDir = normalize(vec3(normCoord, 1.0));
+
+            // Apply rotations (yaw and pitch)
+            float cosYaw = cos(u_yaw);
+            float sinYaw = sin(u_yaw);
+            float cosPitch = cos(u_pitch);
+            float sinPitch = sin(u_pitch);
+            mat3 yawMatrix = mat3(
+              cosYaw,  0.0, sinYaw,
+              0.0,     1.0, 0.0,
+             -sinYaw,  0.0, cosYaw
+            );
+            mat3 pitchMatrix = mat3(
+              1.0, 0.0,      0.0,
+              0.0, cosPitch, -sinPitch,
+              0.0, sinPitch, cosPitch
+            );
+            viewDir = yawMatrix * pitchMatrix * viewDir;
+
+            // Get horizontal angle theta and map it to a texture index
+            float theta = atan(viewDir.z, viewDir.x);
+            if (theta < 0.0) theta += 2.0 * PI;
+            float indexFloat = theta / (2.0 * PI) * u_imageCount;
+            float fracPart = fract(indexFloat);
+            float smoothTransition = smoothstep(0.05, 0.95, fracPart);
+
+            // Since the correct textures are bound as u_image0 and u_image1 from JS,
+            // simply sample them at v_texCoord.
+            vec4 color0 = texture(u_image0, v_texCoord);
+            vec4 color1 = texture(u_image1, v_texCoord);
+            return mix(color0, color1, smoothTransition);
+          }
+
+          /////////////////////////////////
+          // Layer 2: Fractal Iridescent Effect
+          /////////////////////////////////
+          vec3 hsv(float h, float s, float v) {
+            vec3 k = vec3(1.0, 2.0/3.0, 1.0/3.0);
+            vec3 p = abs(fract(vec3(h) + k) * 6.0 - 3.0);
+            return v * mix(vec3(1.0), clamp(p - 1.0, 0.0, 1.0), s);
+          }
+
+          vec3 formula(in vec2 _p, in vec2 c) {
+            vec2 p = _p;
+            const float n = 2.0;
+            const int iters = 12;
+            float timeVal = u_time * 0.1;
+            vec3 col = vec3(0.0);
+            float t = 1.0;
+            float dpp = dot(p, p);
+            float lp = sqrt(dpp);
+            float r = smoothstep(0.0, 0.2, lp);
+            for (int i = 0; i < iters; i++) {
+              p = abs(mod(p/dpp + c, n) - n/2.0);
+              dpp = dot(p, p);
+              lp = sqrt(dpp);
+              t *= smoothstep(0.0, 0.01, abs(n/2.0 - p.x) * lp)
+                 * smoothstep(0.0, 0.01, abs(n/2.0 - p.y) * lp)
+                 * smoothstep(0.0, 0.01, abs(p.x) * 2.0)
+                 * smoothstep(0.0, 0.01, abs(p.y) * 2.0);
+              r *= smoothstep(0.0, 0.2, lp);
+              col += hsv(1.0 - max(p.x, p.y) + t * 2.0 + timeVal, 2.0 - lp + t, r);
+            }
+            return (-cos(col / 4.0) * 0.5 + 0.5) * t;
+          }
+
+          vec3 newShaderEffect(vec2 fragCoord) {
+            vec2 p = -1.0 + 2.0 * fragCoord / u_resolution;
+            p.x *= u_resolution.x / u_resolution.y;
+            p *= 2.0;
+            const vec2 e = vec2(0.06545465634, -0.05346356485);
+            vec2 c = u_time * e;
+            vec3 col = vec3(0.0);
+            const float blursamples = 4.0;
+            float sbs = sqrt(blursamples);
+            float mbluramount = 1.0 / u_resolution.x / length(e) / blursamples * 2.0;
+            float aabluramount = 1.0 / u_resolution.x / sbs * 4.0;
+            for (float b = 0.0; b < blursamples; b++) {
+              col += formula(
+                p + vec2(mod(b, sbs) * aabluramount, floor(b / sbs) * aabluramount),
+                c + e * mbluramount * b
+              );
+            }
+            col /= blursamples;
+            return col;
+          }
+
+          /////////////////////////////////
+          // Blend Mode Functions
+          /////////////////////////////////
+          vec3 colorDodgeBlend(vec3 base, vec3 blend) {
+            return clamp(base / (1.0 - blend + 0.001), 0.0, 1.0);
+          }
+          vec3 lightenBlend(vec3 base, vec3 blend) {
+            return max(base, blend);
+          }
+          vec3 differenceBlend(vec3 base, vec3 blend) {
+            return abs(base - blend);
+          }
+
+          /////////////////////////////////
+          // Main Fragment Function
+          /////////////////////////////////
+          void main() {
+            // Layer 1: Base spherical blend of images
+            vec4 baseColor = sphericalImageBlend();
+
+            // Layer 2: Overlay the displacement video (sampled directly without UV shifts)
+            vec4 dispVideoColor = texture(u_dispVideo, v_texCoord);
+            // Adjust the overlay strength with an alpha value (tweak as needed)
+            float dispAlpha = 0.4;
+            vec4 combinedColor = mix(baseColor, dispVideoColor, dispAlpha);
+
+            // Layer 3: Compute the fractal effect and blend it on top.
+            vec3 fractalEffect = newShaderEffect(gl_FragCoord.xy) * u_fractalIntensity;
+            // Example blend: using color dodge blend. You may choose lighten or difference.
+            vec3 blendedFractal = colorDodgeBlend(combinedColor.rgb, fractalEffect);
+
+            // Final output
+            outColor = vec4(blendedFractal, 1.0);
+          }
+        `;
+
+        this.program = this.createShaderProgram();
+        this.setupBuffers();
+        this.loadTextures();
+        this.loadDispTexture();
+        this.setupEventListeners();
+        this.render();
+      }
+
+      smoothStep(edge0, edge1, x) {
+        const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
+        return t * t * (3 - 2 * t);
+      }
+
+      createShaderProgram() {
+        const gl = this.gl;
+        const vertexShader = gl.createShader(gl.VERTEX_SHADER);
+        gl.shaderSource(vertexShader, this.vertexShaderSource);
+        gl.compileShader(vertexShader);
+        if (!gl.getShaderParameter(vertexShader, gl.COMPILE_STATUS)) {
+          console.error('Vertex shader error:', gl.getShaderInfoLog(vertexShader));
+        }
+        const fragmentShader = gl.createShader(gl.FRAGMENT_SHADER);
+        gl.shaderSource(fragmentShader, this.fragmentShaderSource);
+        gl.compileShader(fragmentShader);
+        if (!gl.getShaderParameter(fragmentShader, gl.COMPILE_STATUS)) {
+          console.error('Fragment shader error:', gl.getShaderInfoLog(fragmentShader));
+        }
+        const program = gl.createProgram();
+        gl.attachShader(program, vertexShader);
+        gl.attachShader(program, fragmentShader);
+        gl.linkProgram(program);
+        if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+          console.error('Program linking error:', gl.getProgramInfoLog(program));
+        }
+        return program;
+      }
+
+      setupBuffers() {
+        const gl = this.gl;
+        const positionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+        const positions = [
+          -1.0, -1.0,
+           1.0, -1.0,
+          -1.0,  1.0,
+          -1.0,  1.0,
+           1.0, -1.0,
+           1.0,  1.0
+        ];
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
+
+        const texCoordBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+        const texCoords = [
+          0.0, 0.0,
+          1.0, 0.0,
+          0.0, 1.0,
+          0.0, 1.0,
+          1.0, 0.0,
+          1.0, 1.0
+        ];
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(texCoords), gl.STATIC_DRAW);
+
+        gl.useProgram(this.program);
+        const posLoc = gl.getAttribLocation(this.program, 'a_position');
+        const texLoc = gl.getAttribLocation(this.program, 'a_texCoord');
+        gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+        gl.enableVertexAttribArray(posLoc);
+        gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
+        gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+        gl.enableVertexAttribArray(texLoc);
+        gl.vertexAttribPointer(texLoc, 2, gl.FLOAT, false, 0, 0);
+      }
+
+      loadTextures() {
+        const gl = this.gl;
+        this.textures = [];
+        this.images = [];
+        // Load images from imagePaths
+        this.imagePaths.forEach(path => {
+          const img = new Image();
+          img.src = path;
+          this.images.push(img);
+        });
+        Promise.all(this.images.map(img => new Promise(resolve => {
+          if (img.complete) resolve();
+          else img.onload = resolve;
+        }))).then(() => {
+          this.images.forEach(image => {
+            const texture = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, texture);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+            this.textures.push(texture);
+          });
+          this.resizeCanvas();
+        }).catch(err => console.error('Error loading base images:', err));
+      }
+
+      loadDispTexture() {
+        const gl = this.gl;
+        this.dispVideoTexture = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, this.dispVideoTexture);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 480, 270, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      }
+
+      updateVideoTexture() {
+        if (!this.video.paused && this.video.readyState >= this.video.HAVE_CURRENT_DATA) {
+          const gl = this.gl;
+          gl.bindTexture(gl.TEXTURE_2D, this.dispVideoTexture);
+          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, this.video);
+        }
+      }
+
+      setupEventListeners() {
+        window.addEventListener('mousemove', e => {
+          this.mouseX = e.clientX;
+          this.mouseY = e.clientY;
+          this.lastMouseMoveTime = performance.now() / 1000;
+        });
+        window.addEventListener('resize', () => {
+          this.resizeCanvas();
+        });
+
+        // Mobile device orientation
+        if (window.DeviceOrientationEvent) {
+          if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+            const motionBtn = document.getElementById('motionBtn');
+            motionBtn.style.display = 'block';
+            motionBtn.addEventListener('click', () => {
+              DeviceOrientationEvent.requestPermission()
+                .then(response => {
+                  if (response === 'granted') {
+                    window.addEventListener('deviceorientation', e => {
+                      let gamma = e.gamma || 0;
+                      let beta = e.beta || 0;
+                      this.yaw = ((gamma + 90) / 180) * 2.0 * Math.PI;
+                      this.pitch = ((beta + 180) / 360) * Math.PI;
+                      this.lastMouseMoveTime = performance.now() / 1000;
+                    });
+                    motionBtn.style.display = 'none';
+                  }
+                })
+                .catch(console.error);
+            });
+          } else {
+            window.addEventListener('deviceorientation', e => {
+              let gamma = e.gamma || 0;
+              let beta = e.beta || 0;
+              this.yaw = ((gamma + 90) / 180) * 2.0 * Math.PI;
+              this.pitch = ((beta + 180) / 360) * Math.PI;
+              this.lastMouseMoveTime = performance.now() / 1000;
+            });
+          }
+        }
+
+        // Desktop: click and drag for rotation
+        this.canvas.addEventListener('mousedown', e => {
+          this.isDragging = true;
+          this.lastMousePos = { x: e.clientX, y: e.clientY };
+        });
+        this.canvas.addEventListener('mousemove', e => {
+          if (this.isDragging) {
+            const sensitivity = 0.005;
+            const deltaX = e.clientX - this.lastMousePos.x;
+            const deltaY = e.clientY - this.lastMousePos.y;
+            this.yaw += deltaX * sensitivity;
+            this.pitch += deltaY * sensitivity;
+            this.lastMousePos = { x: e.clientX, y: e.clientY };
+          }
+        });
+        this.canvas.addEventListener('mouseup', () => { this.isDragging = false; });
+        this.canvas.addEventListener('mouseout', () => { this.isDragging = false; });
+      }
+
+      resizeCanvas() {
+        this.canvas.width = window.innerWidth;
+        this.canvas.height = window.innerHeight;
+        this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+      }
+
+      render() {
+        const gl = this.gl;
+        const now = performance.now() / 1000;
+        this.lastFrameTime = now;
+
+        // Play or pause the displacement video based on recent movement
+        const timeSinceMove = now - this.lastMouseMoveTime;
+        if (timeSinceMove < this.moveThreshold) {
+          if (this.video.paused) {
+            this.video.play().catch(err => console.error("Video play error:", err));
+          }
+        } else {
+          if (!this.video.paused) {
+            this.video.pause();
+          }
+        }
+
+        // Update fractal time based on mouse movement speed
+        const dx = this.mouseX - this.lastMouseX;
+        const dy = this.mouseY - this.lastMouseY;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        const speedFactor = 0.015;
+        this.fractalTime += distance * speedFactor;
+        this.lastMouseX = this.mouseX;
+        this.lastMouseY = this.mouseY;
+
+        this.updateVideoTexture();
+        gl.clearColor(0, 0, 0, 1);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+
+        if (!this.textures || this.textures.length < 2) {
+          requestAnimationFrame(() => this.render());
+          return;
+        }
+
+        gl.useProgram(this.program);
+
+        // Pass uniforms to shader
+        const resLoc = gl.getUniformLocation(this.program, 'u_resolution');
+        const timeLoc = gl.getUniformLocation(this.program, 'u_time');
+        const fractalIntensityLoc = gl.getUniformLocation(this.program, 'u_fractalIntensity');
+        const blendModeLoc = gl.getUniformLocation(this.program, 'u_blendMode');
+        const yawLoc = gl.getUniformLocation(this.program, 'u_yaw');
+        const pitchLoc = gl.getUniformLocation(this.program, 'u_pitch');
+        const imageCountLoc = gl.getUniformLocation(this.program, 'u_imageCount');
+        
+        gl.uniform2f(resLoc, this.canvas.width, this.canvas.height);
+        gl.uniform1f(timeLoc, this.fractalTime);
+        gl.uniform1f(fractalIntensityLoc, 1.0);
+        gl.uniform1f(blendModeLoc, 0.5);
+        gl.uniform1f(yawLoc, this.yaw);
+        gl.uniform1f(pitchLoc, this.pitch);
+        gl.uniform1f(imageCountLoc, this.imagePaths.length);
+
+        // Determine which textures to bind based on yaw.
+        let normalizedYaw = (((this.yaw % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI)) / (2 * Math.PI);
+        let floatIndex = normalizedYaw * this.imagePaths.length;
+        let baseIndex = Math.floor(floatIndex) % this.imagePaths.length;
+        let nextIndex = (baseIndex + 1) % this.imagePaths.length;
+
+        // Bind base images as textures:
+        const img0Loc = gl.getUniformLocation(this.program, 'u_image0');
+        const img1Loc = gl.getUniformLocation(this.program, 'u_image1');
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this.textures[baseIndex]);
+        gl.uniform1i(img0Loc, 0);
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, this.textures[nextIndex]);
+        gl.uniform1i(img1Loc, 1);
+
+        // Bind displacement video texture:
+        const dispVideoLoc = gl.getUniformLocation(this.program, 'u_dispVideo');
+        gl.activeTexture(gl.TEXTURE2);
+        gl.bindTexture(gl.TEXTURE_2D, this.dispVideoTexture);
+        gl.uniform1i(dispVideoLoc, 2);
+
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+        requestAnimationFrame(() => this.render());
+      }
+    }
+
+    window.addEventListener('load', () => {
+      new OrganicFluidTransition();
+    });
+  </script>
+</body>
+</html>
