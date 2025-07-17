@@ -61,14 +61,15 @@
         this.transitionMultiplier = 1.0;
         
         // Mouse positions (we'll use a smoothed value for transitions)
-        this.mouseX = 0;
-        this.mouseY = 0;
-        this.smoothedMouseX = 0; // used for smoothing transitions
-        this.lastMouseX = 0;
-        this.lastMouseY = 0;
+        this.mouseX = window.innerWidth / 2; // Start at center
+        this.mouseY = window.innerHeight / 2;
+        this.smoothedMouseX = window.innerWidth / 2; // Start at center to prevent initial cycling
+        this.lastMouseX = window.innerWidth / 2;
+        this.lastMouseY = window.innerHeight / 2;
         this.lastMouseMoveTime = performance.now() / 1000;
         this.moveThreshold = 0.1;
-  
+        this.hasUserInteracted = false; // Track if user has actually moved
+
         // Fractal time is driven by mouse movement speed.
         this.fractalTime = 0;
         this.lastFrameTime = performance.now() / 1000;
@@ -110,6 +111,7 @@
           uniform float u_dispScale;
           uniform float u_transition; // Smoothed (and scaled) mouse-based transition (0.0 to 1.0)
           uniform float u_imageCount;  // Total number of images
+          uniform float u_videoTime; // Separate time for video animation
   
           in vec2 v_texCoord;
           out vec4 outColor;
@@ -121,8 +123,8 @@
             float transitionVal = u_transition * u_imageCount;
             float blendFactor = fract(transitionVal);
             
-            // Displacement effect
-            vec2 timeOffset = vec2(0.015 * sin(u_time * 0.25), 0.015 * cos(u_time * 0.25));
+            // Displacement effect - use u_videoTime instead of u_time for animation
+            vec2 timeOffset = vec2(0.015 * sin(u_videoTime * 0.25), 0.015 * cos(u_videoTime * 0.25));
             vec2 dispCoord = v_texCoord * u_dispScale + timeOffset;
             vec2 videoDisp = texture(u_dispVideo, dispCoord).rg;
             float watermarkMask = 1.0;
@@ -132,7 +134,7 @@
               watermarkMask = 1.0 - (xFade * yFade);
               videoDisp = mix(videoDisp, vec2(0.5, 0.5), 1.0 - watermarkMask);
             }
-            float dynamicDisp = u_dispAmount * (1.0 + 0.4 * sin(u_time * 0.15));
+            float dynamicDisp = u_dispAmount * (1.0 + 0.4 * sin(u_videoTime * 0.15));
             vec2 displacement = (videoDisp - 0.5) * dynamicDisp * 1.5 * watermarkMask;
   
             vec2 displacedUV0 = clamp(v_texCoord + displacement * (1.0 - blendFactor), 0.0, 1.0);
@@ -390,6 +392,7 @@
           this.mouseX = e.clientX;
           this.mouseY = e.clientY;
           this.lastMouseMoveTime = performance.now() / 1000;
+          this.hasUserInteracted = true;
         });
 
         // Touch events for mobile
@@ -399,6 +402,7 @@
             this.mouseX = e.touches[0].clientX;
             this.mouseY = e.touches[0].clientY;
             this.lastMouseMoveTime = performance.now() / 1000;
+            this.hasUserInteracted = true;
           }
         }, { passive: false });
 
@@ -407,6 +411,7 @@
             this.mouseX = e.touches[0].clientX;
             this.mouseY = e.touches[0].clientY;
             this.lastMouseMoveTime = performance.now() / 1000;
+            this.hasUserInteracted = true;
           }
         });
 
@@ -426,22 +431,43 @@
       }
   
       resizeCanvas() {
+        const prevWidth = this.canvas.width;
         this.canvas.width = window.innerWidth;
         this.canvas.height = window.innerHeight;
         this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+        
+        // Update mouse positions to maintain relative position after resize
+        if (prevWidth > 0 && this.hasUserInteracted) {
+          const ratio = this.canvas.width / prevWidth;
+          this.mouseX *= ratio;
+          this.smoothedMouseX *= ratio;
+          this.lastMouseX *= ratio;
+        } else {
+          // If no interaction yet, center the positions
+          this.mouseX = window.innerWidth / 2;
+          this.smoothedMouseX = window.innerWidth / 2;
+          this.lastMouseX = window.innerWidth / 2;
+          this.mouseY = window.innerHeight / 2;
+          this.lastMouseY = window.innerHeight / 2;
+        }
       }
   
       render() {
         const gl = this.gl;
         const now = performance.now() / 1000;
         this.lastFrameTime = now;
-  
-        // Update the smoothed mouse X value with an extremely slow approach.
-        this.smoothedMouseX = this.smoothedMouseX * 0.999 + this.mouseX * 0.001;
-  
+
+        // Only update smoothed mouse position if user has interacted
+        if (this.hasUserInteracted) {
+          // Update the smoothed mouse X value with an extremely slow approach.
+          this.smoothedMouseX = this.smoothedMouseX * 0.999 + this.mouseX * 0.001;
+        }
+
         // Play or pause the displacement video based on recent mouse movement.
         const timeSinceMove = now - this.lastMouseMoveTime;
-        if (timeSinceMove < this.moveThreshold) {
+        const isRecentlyMoved = timeSinceMove < this.moveThreshold;
+        
+        if (isRecentlyMoved && this.hasUserInteracted) {
           if (this.video && this.video.paused) {
             this.video.play().catch(err => console.error("Video play error:", err));
           }
@@ -450,30 +476,33 @@
             this.video.pause();
           }
         }
-  
-        // Update fractal time based on mouse movement speed.
-        const dx = this.mouseX - this.lastMouseX;
-        const dy = this.mouseY - this.lastMouseY;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-        const speedFactor = 0.015;
-        this.fractalTime += distance * speedFactor;
+
+        // Update fractal time based on mouse movement speed, but only if recently moved
+        if (isRecentlyMoved && this.hasUserInteracted) {
+          const dx = this.mouseX - this.lastMouseX;
+          const dy = this.mouseY - this.lastMouseY;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+          const speedFactor = 0.015;
+          this.fractalTime += distance * speedFactor;
+        }
         this.lastMouseX = this.mouseX;
         this.lastMouseY = this.mouseY;
-  
+
         this.updateVideoTexture();
         gl.clearColor(0, 0, 0, 1);
         gl.clear(gl.COLOR_BUFFER_BIT);
-  
+
         if (!this.textures || this.textures.length < 2) {
           requestAnimationFrame(() => this.render());
           return;
         }
-  
+
         gl.useProgram(this.program);
-  
+
         // Pass uniforms to shader.
         const resLoc = gl.getUniformLocation(this.program, 'u_resolution');
         const timeLoc = gl.getUniformLocation(this.program, 'u_time');
+        const videoTimeLoc = gl.getUniformLocation(this.program, 'u_videoTime');
         const fractalIntensityLoc = gl.getUniformLocation(this.program, 'u_fractalIntensity');
         const dispAmountLoc = gl.getUniformLocation(this.program, 'u_dispAmount');
         const dispScaleLoc = gl.getUniformLocation(this.program, 'u_dispScale');
@@ -482,6 +511,8 @@
         
         gl.uniform2f(resLoc, this.canvas.width, this.canvas.height);
         gl.uniform1f(timeLoc, this.fractalTime);
+        // Use current video time if playing, otherwise use the time when it was paused
+        gl.uniform1f(videoTimeLoc, this.video && !this.video.paused ? this.video.currentTime : (this.pausedVideoTime || 0));
         gl.uniform1f(fractalIntensityLoc, 0.5); // Low fractal intensity to let images show through.
         gl.uniform1f(dispAmountLoc, 0.05);
         gl.uniform1f(dispScaleLoc, 1.0);
@@ -489,11 +520,18 @@
         const t = (this.smoothedMouseX / this.canvas.width) * this.transitionMultiplier;
         gl.uniform1f(transitionLoc, t);
         gl.uniform1f(imageCountLoc, this.imagePaths.length);
-  
+
+        // Store the video time when it gets paused
+        if (this.video && this.video.paused && !this.pausedVideoTime) {
+          this.pausedVideoTime = this.video.currentTime;
+        } else if (this.video && !this.video.paused) {
+          this.pausedVideoTime = null;
+        }
+
         const transitionVal = t * this.imagePaths.length;
         const baseIndex = Math.floor(transitionVal) % this.imagePaths.length;
         const nextIndex = (baseIndex + 1) % this.imagePaths.length;
-  
+
         const img0Loc = gl.getUniformLocation(this.program, 'u_image0');
         const img1Loc = gl.getUniformLocation(this.program, 'u_image1');
         gl.activeTexture(gl.TEXTURE0);
@@ -502,17 +540,17 @@
         gl.activeTexture(gl.TEXTURE1);
         gl.bindTexture(gl.TEXTURE_2D, this.textures[nextIndex]);
         gl.uniform1i(img1Loc, 1);
-  
+
         const dispVideoLoc = gl.getUniformLocation(this.program, 'u_dispVideo');
         gl.activeTexture(gl.TEXTURE2);
         gl.bindTexture(gl.TEXTURE_2D, this.dispVideoTexture);
         gl.uniform1i(dispVideoLoc, 2);
-  
+
         gl.drawArrays(gl.TRIANGLES, 0, 6);
         requestAnimationFrame(() => this.render());
       }
     }
-  
+
     window.addEventListener('load', () => {
       new OrganicFluidTransition();
     });
