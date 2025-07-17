@@ -27,8 +27,9 @@
       height: auto;
       max-width: 100vw;
       max-height: 100vh;
-      opacity: 1;
+      opacity: 0;
       z-index: 0;
+      transition: opacity 0.5s ease-out;
     }
     #loadingGif {
       position: absolute;
@@ -40,6 +41,8 @@
       z-index: 1;
       max-width: 80vw;
       max-height: 80vh;
+      opacity: 0;
+      transition: opacity 0.3s ease-in;
     }
     .loader-text-wrapper {
       position: absolute;
@@ -79,7 +82,7 @@
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
       color: transparent;
-      transition: width 0.3s ease-out;
+      transition: width 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94);
     }
     .loader-subtext {
       display: block;
@@ -162,14 +165,16 @@
 
     console.log(`Detected device type: ${isMobile ? 'mobile' : 'desktop'}`);
 
-    // Set images immediately based on device type
+    // Set file paths based on device type
     const splashImage = isMobile ? './splash-mobile.jpg' : './splash.jpg';
     const loaderGifFile = isMobile ? './loading-mobile.gif' : './loading.gif';
     
-    splash.src = splashImage;
-    loadingGifEl.src = loaderGifFile;
-
-    // Build assets list for index2.html content
+    // Smooth progress tracking
+    let actualProgress = 0;
+    let smoothProgress = 0;
+    let animationId = null;
+    
+    // Assets for preloading (for index2.html)
     let totalAssets = 0;
     let loadedAssets = 0;
     const ASSETS = [];
@@ -180,32 +185,86 @@
       ASSETS.push(folder + i + '.JPG');
     }
     
-    // Add video based on device type for the NEXT page
-    ASSETS.push(isMobile ? 'dispvid4mobile.mp4' : 'dispvid4.mp4');
+    // Add video based on device type for the NEXT page - FIXED FILENAME
+    ASSETS.push(isMobile ? 'dispvid4-mobile.mp4' : 'dispvid4.mp4');
     
     totalAssets = ASSETS.length;
+    console.log(`Will preload ${totalAssets} assets for index2.html`);
 
-    console.log(`Preloading ${totalAssets} assets for index2.html`);
-
-    function updateProgress() {
-      const progressPercent = Math.min(100, Math.round((loadedAssets / totalAssets) * 100));
-      fill.style.width = progressPercent + '%';
-      
-      console.log(`Loading progress: ${progressPercent}% (${loadedAssets}/${totalAssets})`);
-      
-      if (loadedAssets >= totalAssets) {
-        console.log('All assets for index2.html loaded, transitioning...');
-        setTimeout(() => {
-          fadeScreen.classList.add('fade-in');
+    // Smooth animation function
+    function animateProgress() {
+      const difference = actualProgress - smoothProgress;
+      if (Math.abs(difference) > 0.1) {
+        smoothProgress += difference * 0.08; // Adjust this value to control smoothness (lower = smoother)
+        
+        // Update both text fill and splash opacity
+        fill.style.width = smoothProgress + '%';
+        splash.style.opacity = smoothProgress / 100;
+        
+        animationId = requestAnimationFrame(animateProgress);
+      } else {
+        smoothProgress = actualProgress;
+        fill.style.width = smoothProgress + '%';
+        splash.style.opacity = smoothProgress / 100;
+        
+        if (smoothProgress >= 100) {
+          console.log('Smooth animation complete, transitioning...');
           setTimeout(() => {
-            window.location.href = 'index2.html';
-          }, 1400);
-        }, 700);
+            fadeScreen.classList.add('fade-in');
+            setTimeout(() => {
+              window.location.href = 'index2.html';
+            }, 1400);
+          }, 700);
+        }
       }
     }
 
-    function preloadAssets() {
-      console.log('Starting asset preload for index2.html');
+    function updateProgress() {
+      const progressPercent = Math.min(100, Math.round((loadedAssets / totalAssets) * 100));
+      actualProgress = progressPercent;
+      
+      console.log(`Loading progress: ${progressPercent}% (${loadedAssets}/${totalAssets})`);
+      
+      // Start smooth animation if not already running
+      if (!animationId && actualProgress > 0) {
+        animateProgress();
+      }
+    }
+
+    // Priority loading: Load GIF first
+    function loadPriorityAssets() {
+      console.log('Loading priority assets (GIF and splash)...');
+      
+      // Load the loading GIF first
+      loadingGifEl.onload = () => {
+        console.log('Loading GIF loaded, showing it');
+        loadingGifEl.style.opacity = '1';
+        
+        // Start loading splash image
+        splash.onload = () => {
+          console.log('Splash image loaded, starting main content preload');
+          // Start preloading the main content
+          preloadMainAssets();
+        };
+        splash.onerror = () => {
+          console.log('Splash image failed to load, starting main content preload anyway');
+          preloadMainAssets();
+        };
+        splash.src = splashImage;
+      };
+      
+      loadingGifEl.onerror = () => {
+        console.log('Loading GIF failed to load, proceeding anyway');
+        loadingGifEl.style.opacity = '1'; // Show anyway
+        splash.src = splashImage;
+        preloadMainAssets();
+      };
+      
+      loadingGifEl.src = loaderGifFile;
+    }
+
+    function preloadMainAssets() {
+      console.log('Starting main asset preload for index2.html');
       
       ASSETS.forEach((url, index) => {
         if (url.endsWith('.mp4')) {
@@ -238,32 +297,29 @@
           img.src = url;
           img.onload = () => {
             loadedAssets++;
-            console.log(`Image preloaded: ${url}`);
             updateProgress();
           };
           img.onerror = () => {
             loadedAssets++;
-            console.log(`Image failed to preload: ${url}`);
             updateProgress();
           };
         }
       });
     }
 
-    // Start immediately when DOM is ready
+    // Start priority loading immediately when DOM is ready
     document.addEventListener('DOMContentLoaded', () => {
-      console.log('DOM loaded, starting preload immediately');
-      // Start preloading assets for index2.html immediately
+      console.log('DOM loaded, starting priority asset loading');
       setTimeout(() => {
-        preloadAssets();
+        loadPriorityAssets();
       }, 100);
     });
 
     // Fallback for older browsers
     window.addEventListener('load', () => {
-      if (loadedAssets === 0 && totalAssets > 0) {
-        console.log('Window loaded fallback - starting preload');
-        preloadAssets();
+      if (loadingGifEl.style.opacity !== '1') {
+        console.log('Window loaded fallback - starting priority loading');
+        loadPriorityAssets();
       }
     });
 
