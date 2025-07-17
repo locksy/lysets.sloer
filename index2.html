@@ -105,9 +105,9 @@
         // Transition settings - very slow and deliberate
         this.transitionMultiplier = 0.8; // Reduced from 1.0 for slower range coverage
         
-        // Image dimensions (you may need to adjust these to match your actual images)
-        this.imageWidth = 1920; // Adjust to your image width
-        this.imageHeight = 1080; // Adjust to your image height
+        // Image dimensions - set these to match your actual mobile/desktop image sizes
+        this.imageWidth = this.isMobile ? 1080 : 1920; // Mobile images are typically smaller
+        this.imageHeight = this.isMobile ? 1920 : 1080; // Mobile might be portrait orientation
         
         // Mouse positions (we'll use a smoothed value for transitions)
         this.mouseX = window.innerWidth / 2; // Start at center
@@ -166,17 +166,21 @@
   
           // Function to calculate UV coordinates for original image size
           vec2 getImageUV(vec2 coord) {
-            vec2 scale = u_resolution / u_imageResolution;
-            float minScale = min(scale.x, scale.y);
+            // Display images at 100% actual size, centered
+            vec2 imagePixelSize = u_imageResolution;
+            vec2 screenPixelSize = u_resolution;
             
-            // Center the image
-            vec2 scaledSize = u_imageResolution * minScale;
-            vec2 offset = (u_resolution - scaledSize) * 0.5;
+            // Convert screen coordinates to pixel coordinates
+            vec2 screenPixel = coord * screenPixelSize;
             
-            // Convert screen coordinates to image coordinates
-            vec2 imageCoord = (coord * u_resolution - offset) / scaledSize;
+            // Center the image on screen
+            vec2 imageOffset = (screenPixelSize - imagePixelSize) * 0.5;
             
-            return imageCoord;
+            // Calculate UV coordinates for the actual image
+            vec2 imagePixel = screenPixel - imageOffset;
+            vec2 imageUV = imagePixel / imagePixelSize;
+            
+            return imageUV;
           }
   
           vec4 baseTransition() {
