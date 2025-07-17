@@ -157,11 +157,12 @@
     const splash = document.getElementById('splash');
     const loadingGifEl = document.getElementById('loadingGif');
 
-    // Enhanced mobile detection
-    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || 
+    // Enhanced mobile detection including Opera Mobile
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Opera Mobi|Mobile|mobile/i.test(navigator.userAgent) || 
                      ('ontouchstart' in window) || 
                      (navigator.maxTouchPoints > 0) ||
-                     (window.innerWidth <= 768);
+                     (window.innerWidth <= 768) ||
+                     (window.orientation !== undefined); // Additional check for mobile orientation API
 
     console.log(`Detected device type: ${isMobile ? 'mobile' : 'desktop'}`);
 
@@ -265,67 +266,117 @@
 
     function preloadMainAssets() {
       console.log('Starting main asset preload for index2.html');
+      console.log('User Agent:', navigator.userAgent);
       console.log('Assets to load:', ASSETS);
+      
+      let timeoutIds = []; // Track all timeouts for cleanup
       
       ASSETS.forEach((url, index) => {
         console.log(`[${index + 1}/${ASSETS.length}] Starting load: ${url}`);
         
         if (url.endsWith('.mp4')) {
           const video = document.createElement('video');
-          video.preload = 'auto';
+          
+          // Opera Mobile specific settings
+          video.preload = 'metadata'; // Less aggressive preloading for Opera
+          video.muted = true;
+          video.playsInline = true;
+          video.crossOrigin = 'anonymous';
+          
           video.src = url;
           
-          const videoTimeout = setTimeout(() => {
-            if (video.oncanplaythrough || video.onerror) {
-              loadedAssets++;
-              console.log(`[${index + 1}/${ASSETS.length}] Video timeout (10s): ${url}`);
-              updateProgress();
-              video.oncanplaythrough = null;
-              video.onerror = null;
-            }
-          }, 10000);
+          let completed = false;
           
+          const completeLoad = (reason) => {
+            if (completed) return;
+            completed = true;
+            
+            loadedAssets++;
+            console.log(`[${index + 1}/${ASSETS.length}] Video ${reason}: ${url}`);
+            updateProgress();
+            
+            // Clean up event listeners
+            video.oncanplaythrough = null;
+            video.onerror = null;
+            video.onloadeddata = null;
+          };
+          
+          // Shorter timeout for mobile/Opera
+          const timeoutDuration = isMobile ? 8000 : 10000;
+          const videoTimeout = setTimeout(() => {
+            completeLoad('timeout');
+          }, timeoutDuration);
+          timeoutIds.push(videoTimeout);
+          
+          // Multiple events for better compatibility
           video.oncanplaythrough = () => {
             clearTimeout(videoTimeout);
-            loadedAssets++;
-            console.log(`[${index + 1}/${ASSETS.length}] Video loaded successfully: ${url}`);
-            updateProgress();
-            video.oncanplaythrough = null;
+            completeLoad('loaded successfully');
+          };
+          
+          video.onloadeddata = () => {
+            clearTimeout(videoTimeout);
+            completeLoad('loaded (basic data)');
           };
           
           video.onerror = (e) => {
             clearTimeout(videoTimeout);
-            loadedAssets++;
-            console.log(`[${index + 1}/${ASSETS.length}] Video failed to load: ${url}`, e);
-            updateProgress();
-            video.onerror = null;
+            completeLoad('failed to load');
+            console.error('Video error details:', e);
           };
+          
         } else {
           const img = new Image();
-          img.src = url;
+          img.crossOrigin = 'anonymous'; // Help with CORS issues
+          
+          let completed = false;
+          
+          const completeImageLoad = (reason) => {
+            if (completed) return;
+            completed = true;
+            
+            loadedAssets++;
+            console.log(`[${index + 1}/${ASSETS.length}] Image ${reason}: ${url}`);
+            updateProgress();
+          };
+          
+          // Timeout for images too (some browsers hang on missing images)
+          const imgTimeout = setTimeout(() => {
+            completeImageLoad('timeout');
+          }, 5000);
+          timeoutIds.push(imgTimeout);
+          
           img.onload = () => {
-            loadedAssets++;
-            console.log(`[${index + 1}/${ASSETS.length}] Image loaded: ${url}`);
-            updateProgress();
+            clearTimeout(imgTimeout);
+            completeImageLoad('loaded');
           };
+          
           img.onerror = (e) => {
-            loadedAssets++;
-            console.log(`[${index + 1}/${ASSETS.length}] Image failed to load: ${url}`, e);
-            updateProgress();
+            clearTimeout(imgTimeout);
+            completeImageLoad('failed');
+            console.error('Image error details:', e);
           };
+          
+          img.src = url;
         }
       });
       
       // Safety timeout - if loading takes too long, force completion
-      setTimeout(() => {
+      const safetyTimeout = setTimeout(() => {
         if (loadedAssets < totalAssets) {
           console.log(`Safety timeout triggered. Loaded: ${loadedAssets}/${totalAssets}`);
+          console.log('Clearing all pending timeouts and forcing completion...');
+          
+          // Clear all pending timeouts
+          timeoutIds.forEach(clearTimeout);
+          
+          // Force completion
           actualProgress = 100;
           if (!animationId) {
             animateProgress();
           }
         }
-      }, 30000); // 30 second safety net
+      }, isMobile ? 20000 : 30000); // Shorter timeout on mobile
     }
 
     // Start priority loading immediately when DOM is ready
@@ -344,12 +395,13 @@
       }
     });
 
-    // Handle orientation changes
+    // Handle orientation changes - include Opera Mobile detection
     window.addEventListener('resize', () => {
-      const newIsMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || 
+      const newIsMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Opera Mobi|Mobile|mobile/i.test(navigator.userAgent) || 
                          ('ontouchstart' in window) || 
                          (navigator.maxTouchPoints > 0) ||
-                         (window.innerWidth <= 768);
+                         (window.innerWidth <= 768) ||
+                         (window.orientation !== undefined);
       
       if (newIsMobile !== isMobile) {
         console.log('Device type changed, reloading...');
