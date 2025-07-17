@@ -105,9 +105,9 @@
         // Transition settings - very slow and deliberate
         this.transitionMultiplier = 0.8; // Reduced from 1.0 for slower range coverage
         
-        // Image dimensions - set these to match your actual mobile/desktop image sizes
-        this.imageWidth = this.isMobile ? 1080 : 1920; // Mobile images are typically smaller
-        this.imageHeight = this.isMobile ? 1920 : 1080; // Mobile might be portrait orientation
+        // Image dimensions - these should match your actual image dimensions
+        this.imageWidth = 1920;  // Actual width of your images
+        this.imageHeight = 1080; // Actual height of your images
         
         // Mouse positions (we'll use a smoothed value for transitions)
         this.mouseX = window.innerWidth / 2; // Start at center
@@ -164,21 +164,36 @@
           in vec2 v_texCoord;
           out vec4 outColor;
   
-          // Function to calculate UV coordinates for original image size
+          // Function to calculate UV coordinates for viewport-height sizing on mobile
           vec2 getImageUV(vec2 coord) {
-            // Display images at 100% actual size, centered
             vec2 imagePixelSize = u_imageResolution;
             vec2 screenPixelSize = u_resolution;
+            
+            // Calculate display size based on device type
+            vec2 displaySize;
+            
+            // Check if this looks like mobile (portrait or small screen)
+            bool isMobile = screenPixelSize.x <= 768.0 || screenPixelSize.y > screenPixelSize.x;
+            
+            if (isMobile) {
+              // Mobile: scale to viewport height, maintain aspect ratio
+              float aspectRatio = imagePixelSize.x / imagePixelSize.y;
+              displaySize.y = screenPixelSize.y; // Full viewport height
+              displaySize.x = displaySize.y * aspectRatio; // Maintain aspect ratio
+            } else {
+              // Desktop: display at actual size
+              displaySize = imagePixelSize;
+            }
             
             // Convert screen coordinates to pixel coordinates
             vec2 screenPixel = coord * screenPixelSize;
             
             // Center the image on screen
-            vec2 imageOffset = (screenPixelSize - imagePixelSize) * 0.5;
+            vec2 imageOffset = (screenPixelSize - displaySize) * 0.5;
             
-            // Calculate UV coordinates for the actual image
+            // Calculate UV coordinates
             vec2 imagePixel = screenPixel - imageOffset;
-            vec2 imageUV = imagePixel / imagePixelSize;
+            vec2 imageUV = imagePixel / displaySize;
             
             return imageUV;
           }
