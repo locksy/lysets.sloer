@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>lysets.slør</title>
+  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@700&display=swap" rel="stylesheet">
   <style>
     body, html {
       margin: 0;
@@ -16,15 +17,61 @@
       width: 100vw;
       height: 100vh;
       display: block;
+      object-fit: none;
+      object-position: center;
+      opacity: 0;
+      transition: opacity 3s ease-in-out;
     }
+    canvas.fade-in {
+      opacity: 1;
+    }
+    
+    /* Text overlay styles */
+    .title-overlay {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-family: 'Oswald', sans-serif;
+      font-size: 100px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      color: #000;
+      z-index: 10000;
+      pointer-events: none;
+      opacity: 1;
+      transition: opacity 1.5s ease-out;
+      text-align: center;
+      background: transparent;
+    }
+    .title-overlay.fade-out {
+      opacity: 0;
+    }
+    
     /* The motion button is no longer used for device orientation */
     #motionBtn {
       display: none;
+    }
+    
+    /* Mobile responsive adjustments */
+    @media (max-width: 768px) {
+      .title-overlay {
+        font-size: 60px;
+        letter-spacing: 1px;
+      }
+    }
+
+    @media (max-width: 480px) {
+      .title-overlay {
+        font-size: 40px;
+        letter-spacing: 0px;
+      }
     }
   </style>
 </head>
 <body>
   <canvas id="shaderCanvas"></canvas>
+  <div class="title-overlay" id="titleOverlay">lysets.slør</div>
   <button id="motionBtn">Click for Device Motion</button>
   
   <script>
@@ -51,14 +98,16 @@
         for (let i = 1; i <= 47; i++) {
           this.imagePaths.push(folder + i + '.JPG');
         }
-        // Randomize the order of image paths.
-        this.shuffleArray(this.imagePaths);
+        // Don't shuffle the original paths - we'll handle randomization differently
         
         console.log(`Loading ${this.imagePaths.length} images from: ${folder}`);
         
-        // Transition multiplier is now increased to 1.0 so that the full screen mouse motion
-        // spans the entire set of images. This results in each image being displayed for less time.
-        this.transitionMultiplier = 1.0;
+        // Transition settings - very slow and deliberate
+        this.transitionMultiplier = 0.8; // Reduced from 1.0 for slower range coverage
+        
+        // Image dimensions (you may need to adjust these to match your actual images)
+        this.imageWidth = 1920; // Adjust to your image width
+        this.imageHeight = 1080; // Adjust to your image height
         
         // Mouse positions (we'll use a smoothed value for transitions)
         this.mouseX = window.innerWidth / 2; // Start at center
@@ -66,9 +115,18 @@
         this.smoothedMouseX = window.innerWidth / 2; // Start at center to prevent initial cycling
         this.lastMouseX = window.innerWidth / 2;
         this.lastMouseY = window.innerHeight / 2;
-        this.lastMouseMoveTime = performance.now() / 1000;
+        this.lastMouseMoveTime = 0; // Start at 0 to indicate no movement yet
         this.moveThreshold = 0.1;
         this.hasUserInteracted = false; // Track if user has actually moved
+        this.initialMouseSet = false; // Track if we've properly set initial mouse position
+        
+        // Randomization system - simpler approach
+        this.imageOrder = [];
+        this.generateRandomOrder();
+        
+        // Fade-in system
+        this.isLoaded = false;
+        this.fadeInStarted = false;
 
         // Fractal time is driven by mouse movement speed.
         this.fractalTime = 0;
@@ -85,17 +143,6 @@
           }
         `;
   
-        /* 
-          Fragment shader:
-            - Computes a blend factor from the scaled, smoothed mouse input.
-            - Creates two versions:
-              (A) A distorted version using displacement from a video texture.
-              (B) A clear (undistorted) version (a simple mix of the two images).
-            - A "clear pulse" factor is computed so that at the midpoint of the transition (blendFactor ≈ 0.5)
-              the undistorted version briefly appears.
-            - The fractal effect is computed and then its intensity is modulated by (1 - clearPulse)
-              so that when the image is at peak clarity, the overlay effect is lowered to help the image "pop."
-        */
         this.fragmentShaderSource = `#version 300 es
           precision highp float;
           #define PI 3.14159265359
@@ -105,27 +152,47 @@
           uniform sampler2D u_image1;
           uniform sampler2D u_dispVideo;
           uniform vec2 u_resolution;
+          uniform vec2 u_imageResolution;
           uniform float u_time;
           uniform float u_fractalIntensity;
           uniform float u_dispAmount;
           uniform float u_dispScale;
-          uniform float u_transition; // Smoothed (and scaled) mouse-based transition (0.0 to 1.0)
-          uniform float u_imageCount;  // Total number of images
-          uniform float u_videoTime; // Separate time for video animation
+          uniform float u_transition;
+          uniform float u_imageCount;
+          uniform float u_videoTime;
   
           in vec2 v_texCoord;
           out vec4 outColor;
   
-          /////////////////////////////////
-          // Base Transition (Distorted Version)
-          /////////////////////////////////
+          // Function to calculate UV coordinates for original image size
+          vec2 getImageUV(vec2 coord) {
+            vec2 scale = u_resolution / u_imageResolution;
+            float minScale = min(scale.x, scale.y);
+            
+            // Center the image
+            vec2 scaledSize = u_imageResolution * minScale;
+            vec2 offset = (u_resolution - scaledSize) * 0.5;
+            
+            // Convert screen coordinates to image coordinates
+            vec2 imageCoord = (coord * u_resolution - offset) / scaledSize;
+            
+            return imageCoord;
+          }
+  
           vec4 baseTransition() {
             float transitionVal = u_transition * u_imageCount;
             float blendFactor = fract(transitionVal);
             
-            // Displacement effect - use u_videoTime instead of u_time for animation
+            vec2 imageUV = getImageUV(v_texCoord);
+            
+            // Only apply displacement if we're within image bounds
+            if (imageUV.x < 0.0 || imageUV.x > 1.0 || imageUV.y < 0.0 || imageUV.y > 1.0) {
+              return vec4(0.0, 0.0, 0.0, 1.0);
+            }
+            
+            // Displacement effect
             vec2 timeOffset = vec2(0.015 * sin(u_videoTime * 0.25), 0.015 * cos(u_videoTime * 0.25));
-            vec2 dispCoord = v_texCoord * u_dispScale + timeOffset;
+            vec2 dispCoord = imageUV * u_dispScale + timeOffset;
             vec2 videoDisp = texture(u_dispVideo, dispCoord).rg;
             float watermarkMask = 1.0;
             if (dispCoord.x > 0.7 && dispCoord.y < 0.3) {
@@ -137,26 +204,27 @@
             float dynamicDisp = u_dispAmount * (1.0 + 0.4 * sin(u_videoTime * 0.15));
             vec2 displacement = (videoDisp - 0.5) * dynamicDisp * 1.5 * watermarkMask;
   
-            vec2 displacedUV0 = clamp(v_texCoord + displacement * (1.0 - blendFactor), 0.0, 1.0);
-            vec2 displacedUV1 = clamp(v_texCoord - displacement * blendFactor, 0.0, 1.0);
+            vec2 displacedUV0 = clamp(imageUV + displacement * (1.0 - blendFactor), 0.0, 1.0);
+            vec2 displacedUV1 = clamp(imageUV - displacement * blendFactor, 0.0, 1.0);
   
             vec4 color0 = texture(u_image0, displacedUV0);
             vec4 color1 = texture(u_image1, displacedUV1);
             return mix(color0, color1, blendFactor);
           }
   
-          /////////////////////////////////
-          // Clear Version (Undistorted)
-          /////////////////////////////////
           vec4 clearTransition() {
             float transitionVal = u_transition * u_imageCount;
             float blendFactor = fract(transitionVal);
-            return mix(texture(u_image0, v_texCoord), texture(u_image1, v_texCoord), blendFactor);
+            
+            vec2 imageUV = getImageUV(v_texCoord);
+            
+            if (imageUV.x < 0.0 || imageUV.x > 1.0 || imageUV.y < 0.0 || imageUV.y > 1.0) {
+              return vec4(0.0, 0.0, 0.0, 1.0);
+            }
+            
+            return mix(texture(u_image0, imageUV), texture(u_image1, imageUV), blendFactor);
           }
   
-          /////////////////////////////////
-          // Fractal Iridescent Effect
-          /////////////////////////////////
           vec3 hsv(float h, float s, float v) {
             vec3 k = vec3(1.0, 2.0/3.0, 1.0/3.0);
             vec3 p = abs(fract(vec3(h) + k) * 6.0 - 3.0);
@@ -208,41 +276,24 @@
             return col;
           }
   
-          /////////////////////////////////
-          // Blend Mode Functions
-          /////////////////////////////////
           vec3 colorDodgeBlend(vec3 base, vec3 blend) {
             return clamp(base / (1.0 - blend + 0.001), 0.0, 1.0);
           }
-          vec3 lightenBlend(vec3 base, vec3 blend) {
-            return max(base, blend);
-          }
-          vec3 differenceBlend(vec3 base, vec3 blend) {
-            return abs(base - blend);
-          }
   
-          /////////////////////////////////
-          // Main Fragment Function
-          /////////////////////////////////
           void main() {
             float transitionVal = u_transition * u_imageCount;
             float blendFactor = fract(transitionVal);
   
-            // Get the clear undistorted version and the distorted version.
             vec4 clearColor = clearTransition();
             vec4 distortedColor = baseTransition();
   
-            // Compute clearPulse that peaks at blendFactor == 0.5 but with a narrower window.
             float clearPulse = 1.0 - abs(blendFactor - 0.5) * 4.0;
             clearPulse = clamp(clearPulse, 0.0, 1.0);
   
-            // Mix the distorted and clear versions using clearPulse.
             vec4 finalBase = mix(distortedColor, clearColor, clearPulse);
   
-            // Modulate the fractal effect so that it is lower when clearPulse is high (so the image "pops").
             vec3 fractalEffect = newShaderEffect(gl_FragCoord.xy) * u_fractalIntensity * (1.0 - clearPulse);
   
-            // Blend the final base image with the fractal effect using a color dodge.
             vec3 finalColor = colorDodgeBlend(finalBase.rgb, fractalEffect);
             outColor = vec4(finalColor, 1.0);
           }
@@ -255,8 +306,25 @@
         this.setupEventListeners();
         this.render();
       }
-  
-      // Fisher–Yates shuffle to randomize the image order.
+
+      // Generate randomized order of images
+      generateRandomOrder() {
+        this.imageOrder = [];
+        for (let i = 0; i < this.imagePaths.length; i++) {
+          this.imageOrder.push(i);
+        }
+        this.shuffleArray(this.imageOrder);
+        console.log('Generated random order for images');
+      }
+
+      // Get randomized image index based on transition value
+      getRandomizedIndex(transitionValue) {
+        const normalizedTransition = Math.max(0, Math.min(0.999, transitionValue));
+        const index = Math.floor(normalizedTransition * this.imageOrder.length);
+        return this.imageOrder[index];
+      }
+
+      // Fisher–Yates shuffle
       shuffleArray(array) {
         for (let i = array.length - 1; i > 0; i--) {
           const j = Math.floor(Math.random() * (i + 1));
@@ -329,12 +397,13 @@
         const gl = this.gl;
         this.textures = [];
         this.images = [];
-        // Load images from imagePaths.
+        
         this.imagePaths.forEach(path => {
           const img = new Image();
           img.src = path;
           this.images.push(img);
         });
+        
         Promise.all(this.images.map(img => new Promise(resolve => {
           if (img.complete) resolve();
           else img.onload = resolve;
@@ -342,7 +411,6 @@
           this.images.forEach(image => {
             const texture = gl.createTexture();
             gl.bindTexture(gl.TEXTURE_2D, texture);
-            // Flip texture on Y-axis so it's rendered right-side up.
             gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
@@ -351,7 +419,9 @@
             gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
             this.textures.push(texture);
           });
+          
           this.resizeCanvas();
+          this.isLoaded = true;
           console.log(`Successfully loaded ${this.textures.length} textures`);
         }).catch(err => console.error('Error loading base images:', err));
       }
@@ -370,7 +440,6 @@
   
       updateVideoTexture() {
         if (!this.video) {
-          // Create and configure the video element if not already created.
           this.video = document.createElement('video');
           this.video.src = this.isMobile ? "./dispvid4-mobile.mp4" : "./dispvid4.mp4";
           this.video.loop = true;
@@ -389,6 +458,20 @@
       setupEventListeners() {
         // Mouse events for desktop
         window.addEventListener('mousemove', e => {
+          if (!this.initialMouseSet) {
+            // First mouse movement - set everything to current position to prevent jump
+            this.mouseX = e.clientX;
+            this.mouseY = e.clientY;
+            this.smoothedMouseX = e.clientX;
+            this.lastMouseX = e.clientX;
+            this.lastMouseY = e.clientY;
+            this.initialMouseSet = true;
+            this.hasUserInteracted = true;
+            this.lastMouseMoveTime = performance.now() / 1000;
+            console.log('Initial mouse position set');
+            return;
+          }
+          
           this.mouseX = e.clientX;
           this.mouseY = e.clientY;
           this.lastMouseMoveTime = performance.now() / 1000;
@@ -399,6 +482,20 @@
         window.addEventListener('touchmove', e => {
           e.preventDefault();
           if (e.touches.length > 0) {
+            if (!this.initialMouseSet) {
+              // First touch movement - set everything to current position
+              this.mouseX = e.touches[0].clientX;
+              this.mouseY = e.touches[0].clientY;
+              this.smoothedMouseX = e.touches[0].clientX;
+              this.lastMouseX = e.touches[0].clientX;
+              this.lastMouseY = e.touches[0].clientY;
+              this.initialMouseSet = true;
+              this.hasUserInteracted = true;
+              this.lastMouseMoveTime = performance.now() / 1000;
+              console.log('Initial touch position set');
+              return;
+            }
+            
             this.mouseX = e.touches[0].clientX;
             this.mouseY = e.touches[0].clientY;
             this.lastMouseMoveTime = performance.now() / 1000;
@@ -417,56 +514,56 @@
 
         window.addEventListener('resize', () => {
           this.resizeCanvas();
-          // Recheck mobile status on resize (orientation change)
-          const newIsMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || 
-                             ('ontouchstart' in window) || 
-                             (navigator.maxTouchPoints > 0) ||
-                             (window.innerWidth <= 768);
-          
-          if (newIsMobile !== this.isMobile) {
-            console.log('Device type changed, reloading...');
-            location.reload();
-          }
         });
       }
   
       resizeCanvas() {
-        const prevWidth = this.canvas.width;
         this.canvas.width = window.innerWidth;
         this.canvas.height = window.innerHeight;
         this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
-        
-        // Update mouse positions to maintain relative position after resize
-        if (prevWidth > 0 && this.hasUserInteracted) {
-          const ratio = this.canvas.width / prevWidth;
-          this.mouseX *= ratio;
-          this.smoothedMouseX *= ratio;
-          this.lastMouseX *= ratio;
-        } else {
-          // If no interaction yet, center the positions
-          this.mouseX = window.innerWidth / 2;
-          this.smoothedMouseX = window.innerWidth / 2;
-          this.lastMouseX = window.innerWidth / 2;
-          this.mouseY = window.innerHeight / 2;
-          this.lastMouseY = window.innerHeight / 2;
-        }
       }
   
+      startFadeInSequence() {
+        const canvas = this.canvas;
+        const titleOverlay = document.getElementById('titleOverlay');
+        
+        console.log('Starting fade-in sequence');
+        
+        // Start canvas fade-in after slightly longer delay
+        setTimeout(() => {
+          canvas.classList.add('fade-in');
+          console.log('Canvas fade-in started');
+        }, 500); // Increased delay for more gradual feel
+        
+        // Start text fade-out AFTER canvas fade is complete (3s + 500ms delay = 3.5s total)
+        setTimeout(() => {
+          titleOverlay.classList.add('fade-out');
+          console.log('Title fade-out started');
+        }, 3700); // Wait for longer canvas fade to finish, then start text fade
+      }
+
       render() {
         const gl = this.gl;
         const now = performance.now() / 1000;
-        this.lastFrameTime = now;
 
-        // Only update smoothed mouse position if user has interacted
-        if (this.hasUserInteracted) {
-          // Update the smoothed mouse X value with an extremely slow approach.
-          this.smoothedMouseX = this.smoothedMouseX * 0.999 + this.mouseX * 0.001;
+        // Handle fade-in sequence
+        if (this.isLoaded && !this.fadeInStarted) {
+          this.startFadeInSequence();
+          this.fadeInStarted = true;
         }
 
-        // Play or pause the displacement video based on recent mouse movement.
+        // Only update smoothed mouse position if user has interacted AND recently moved
         const timeSinceMove = now - this.lastMouseMoveTime;
         const isRecentlyMoved = timeSinceMove < this.moveThreshold;
         
+        if (this.hasUserInteracted && isRecentlyMoved) {
+          // Even slower and more contemplative
+          const smoothingFactor = 0.999; // Extremely gentle smoothing
+          const responseFactor = 0.001; // Very slow response - another 50% slower
+          this.smoothedMouseX = this.smoothedMouseX * smoothingFactor + this.mouseX * responseFactor;
+        }
+
+        // Video control
         if (isRecentlyMoved && this.hasUserInteracted) {
           if (this.video && this.video.paused) {
             this.video.play().catch(err => console.error("Video play error:", err));
@@ -477,13 +574,12 @@
           }
         }
 
-        // Update fractal time based on mouse movement speed, but only if recently moved
+        // Update fractal time
         if (isRecentlyMoved && this.hasUserInteracted) {
           const dx = this.mouseX - this.lastMouseX;
           const dy = this.mouseY - this.lastMouseY;
           const distance = Math.sqrt(dx * dx + dy * dy);
-          const speedFactor = 0.015;
-          this.fractalTime += distance * speedFactor;
+          this.fractalTime += distance * 0.015;
         }
         this.lastMouseX = this.mouseX;
         this.lastMouseY = this.mouseY;
@@ -499,52 +595,48 @@
 
         gl.useProgram(this.program);
 
-        // Pass uniforms to shader.
-        const resLoc = gl.getUniformLocation(this.program, 'u_resolution');
-        const timeLoc = gl.getUniformLocation(this.program, 'u_time');
-        const videoTimeLoc = gl.getUniformLocation(this.program, 'u_videoTime');
-        const fractalIntensityLoc = gl.getUniformLocation(this.program, 'u_fractalIntensity');
-        const dispAmountLoc = gl.getUniformLocation(this.program, 'u_dispAmount');
-        const dispScaleLoc = gl.getUniformLocation(this.program, 'u_dispScale');
-        const transitionLoc = gl.getUniformLocation(this.program, 'u_transition');
-        const imageCountLoc = gl.getUniformLocation(this.program, 'u_imageCount');
-        
-        gl.uniform2f(resLoc, this.canvas.width, this.canvas.height);
-        gl.uniform1f(timeLoc, this.fractalTime);
-        // Use current video time if playing, otherwise use the time when it was paused
-        gl.uniform1f(videoTimeLoc, this.video && !this.video.paused ? this.video.currentTime : (this.pausedVideoTime || 0));
-        gl.uniform1f(fractalIntensityLoc, 0.5); // Low fractal intensity to let images show through.
-        gl.uniform1f(dispAmountLoc, 0.05);
-        gl.uniform1f(dispScaleLoc, 1.0);
-        // Calculate the scaled transition value.
-        const t = (this.smoothedMouseX / this.canvas.width) * this.transitionMultiplier;
-        gl.uniform1f(transitionLoc, t);
-        gl.uniform1f(imageCountLoc, this.imagePaths.length);
+        // Pass uniforms to shader
+        gl.uniform2f(gl.getUniformLocation(this.program, 'u_resolution'), this.canvas.width, this.canvas.height);
+        gl.uniform2f(gl.getUniformLocation(this.program, 'u_imageResolution'), this.imageWidth, this.imageHeight);
+        gl.uniform1f(gl.getUniformLocation(this.program, 'u_time'), this.fractalTime);
+        gl.uniform1f(gl.getUniformLocation(this.program, 'u_videoTime'), this.video && !this.video.paused ? this.video.currentTime : (this.pausedVideoTime || 0));
+        gl.uniform1f(gl.getUniformLocation(this.program, 'u_fractalIntensity'), 0.5);
+        gl.uniform1f(gl.getUniformLocation(this.program, 'u_dispAmount'), 0.05);
+        gl.uniform1f(gl.getUniformLocation(this.program, 'u_dispScale'), 1.0);
+        gl.uniform1f(gl.getUniformLocation(this.program, 'u_imageCount'), this.imagePaths.length);
 
-        // Store the video time when it gets paused
+        // Calculate transition value - starts at center and only changes with interaction
+        const rawTransition = this.hasUserInteracted ? 
+          (this.smoothedMouseX / this.canvas.width) : 
+          0.5;
+        
+        // Apply full range multiplier while keeping smooth feel
+        const t = Math.max(0, Math.min(0.999, rawTransition)) * this.transitionMultiplier;
+        gl.uniform1f(gl.getUniformLocation(this.program, 'u_transition'), t);
+
+        // Store video time for pausing
         if (this.video && this.video.paused && !this.pausedVideoTime) {
           this.pausedVideoTime = this.video.currentTime;
         } else if (this.video && !this.video.paused) {
           this.pausedVideoTime = null;
         }
 
-        const transitionVal = t * this.imagePaths.length;
-        const baseIndex = Math.floor(transitionVal) % this.imagePaths.length;
-        const nextIndex = (baseIndex + 1) % this.imagePaths.length;
+        // Get randomized indices
+        const baseIndex = this.getRandomizedIndex(t);
+        const nextIndex = this.getRandomizedIndex(Math.min(0.999, t + 0.02));
 
-        const img0Loc = gl.getUniformLocation(this.program, 'u_image0');
-        const img1Loc = gl.getUniformLocation(this.program, 'u_image1');
+        // Bind textures
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, this.textures[baseIndex]);
-        gl.uniform1i(img0Loc, 0);
+        gl.uniform1i(gl.getUniformLocation(this.program, 'u_image0'), 0);
+        
         gl.activeTexture(gl.TEXTURE1);
         gl.bindTexture(gl.TEXTURE_2D, this.textures[nextIndex]);
-        gl.uniform1i(img1Loc, 1);
+        gl.uniform1i(gl.getUniformLocation(this.program, 'u_image1'), 1);
 
-        const dispVideoLoc = gl.getUniformLocation(this.program, 'u_dispVideo');
         gl.activeTexture(gl.TEXTURE2);
         gl.bindTexture(gl.TEXTURE_2D, this.dispVideoTexture);
-        gl.uniform1i(dispVideoLoc, 2);
+        gl.uniform1i(gl.getUniformLocation(this.program, 'u_dispVideo'), 2);
 
         gl.drawArrays(gl.TRIANGLES, 0, 6);
         requestAnimationFrame(() => this.render());
