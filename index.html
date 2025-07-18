@@ -157,7 +157,7 @@
     const splash = document.getElementById('splash');
     const loadingGifEl = document.getElementById('loadingGif');
 
-    // Enhanced mobile detection
+    // Enhanced mobile detection - determine once and stick with it
     const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || 
                      ('ontouchstart' in window) || 
                      (navigator.maxTouchPoints > 0) ||
@@ -165,7 +165,7 @@
 
     console.log(`Detected device type: ${isMobile ? 'mobile' : 'desktop'}`);
 
-    // Set file paths based on device type
+    // Set file paths based on device type - ONLY load what we need
     const splashImage = isMobile ? './splash-mobile.jpg' : './splash.jpg';
     const loaderGifFile = isMobile ? './loading-mobile.gif' : './loading.gif';
     
@@ -173,42 +173,49 @@
     let actualProgress = 0;
     let smoothProgress = 0;
     let animationId = null;
+    let loadingStarted = false;
     
-    // Assets for preloading (for index2.html)
+    // Assets for preloading (for index2.html) - device-specific only
     let totalAssets = 0;
     let loadedAssets = 0;
     const ASSETS = [];
     
-    // Add images based on device type for the NEXT page
-    const folder = isMobile ? 'img/mobile/' : 'img/desktop/';
-    for (let i = 1; i <= 47; i++) {
-      ASSETS.push(folder + i + '.JPG');
+    // Build asset list based on device type ONLY
+    function buildAssetList() {
+      const folder = isMobile ? 'img/mobile/' : 'img/desktop/';
+      
+      // Add images for the NEXT page (47 images)
+      for (let i = 1; i <= 47; i++) {
+        ASSETS.push(folder + i + '.JPG');
+      }
+      
+      // Add video for the NEXT page - device-specific
+      const videoFile = isMobile ? 'dispvid4-mobile.mp4' : 'dispvid4.mp4';
+      ASSETS.push(videoFile);
+      
+      totalAssets = ASSETS.length;
+      console.log(`Built asset list for ${isMobile ? 'mobile' : 'desktop'}: ${totalAssets} assets`);
+      console.log('Assets to load:', ASSETS);
     }
-    
-    // Add video based on device type for the NEXT page - FIXED FILENAME
-    ASSETS.push(isMobile ? 'dispvid4-mobile.mp4' : 'dispvid4.mp4');
-    
-    totalAssets = ASSETS.length;
-    console.log(`Will preload ${totalAssets} assets for index2.html`);
 
     // Smooth animation function
     function animateProgress() {
       const difference = actualProgress - smoothProgress;
       if (Math.abs(difference) > 0.1) {
-        smoothProgress += difference * 0.08; // Adjust this value to control smoothness (lower = smoother)
+        smoothProgress += difference * 0.08; // Smooth progression
         
         // Update both text fill and splash opacity
-        fill.style.width = smoothProgress + '%';
-        splash.style.opacity = smoothProgress / 100;
+        fill.style.width = Math.min(100, smoothProgress) + '%';
+        splash.style.opacity = Math.min(1, smoothProgress / 100);
         
         animationId = requestAnimationFrame(animateProgress);
       } else {
         smoothProgress = actualProgress;
-        fill.style.width = smoothProgress + '%';
-        splash.style.opacity = smoothProgress / 100;
+        fill.style.width = Math.min(100, smoothProgress) + '%';
+        splash.style.opacity = Math.min(1, smoothProgress / 100);
         
         if (smoothProgress >= 100) {
-          console.log('Smooth animation complete, transitioning...');
+          console.log('Loading complete, transitioning...');
           setTimeout(() => {
             fadeScreen.classList.add('fade-in');
             setTimeout(() => {
@@ -220,6 +227,8 @@
     }
 
     function updateProgress() {
+      if (totalAssets === 0) return;
+      
       const progressPercent = Math.min(100, Math.round((loadedAssets / totalAssets) * 100));
       actualProgress = progressPercent;
       
@@ -231,99 +240,146 @@
       }
     }
 
-    // Priority loading: Load GIF first
+    // Load the loading GIF and splash image first
     function loadPriorityAssets() {
-      console.log('Loading priority assets (GIF and splash)...');
+      console.log('Loading priority assets...');
       
-      // Load the loading GIF first
+      let priorityAssetsLoaded = 0;
+      const totalPriorityAssets = 2; // GIF + splash
+      
+      function checkPriorityComplete() {
+        priorityAssetsLoaded++;
+        if (priorityAssetsLoaded >= totalPriorityAssets) {
+          console.log('Priority assets loaded, starting main preload');
+          preloadMainAssets();
+        }
+      }
+      
+      // Load the loading GIF
       loadingGifEl.onload = () => {
-        console.log('Loading GIF loaded, showing it');
+        console.log('Loading GIF loaded successfully');
         loadingGifEl.style.opacity = '1';
-        
-        // Start loading splash image
-        splash.onload = () => {
-          console.log('Splash image loaded, starting main content preload');
-          // Start preloading the main content
-          preloadMainAssets();
-        };
-        splash.onerror = () => {
-          console.log('Splash image failed to load, starting main content preload anyway');
-          preloadMainAssets();
-        };
-        splash.src = splashImage;
+        checkPriorityComplete();
       };
       
       loadingGifEl.onerror = () => {
-        console.log('Loading GIF failed to load, proceeding anyway');
-        loadingGifEl.style.opacity = '1'; // Show anyway
-        splash.src = splashImage;
-        preloadMainAssets();
+        console.log('Loading GIF failed to load');
+        loadingGifEl.style.opacity = '1'; // Show placeholder
+        checkPriorityComplete();
       };
       
+      // Load splash image
+      splash.onload = () => {
+        console.log('Splash image loaded successfully');
+        checkPriorityComplete();
+      };
+      
+      splash.onerror = () => {
+        console.log('Splash image failed to load');
+        checkPriorityComplete();
+      };
+      
+      // Start loading both assets
       loadingGifEl.src = loaderGifFile;
+      splash.src = splashImage;
     }
 
     function preloadMainAssets() {
+      if (loadingStarted) return; // Prevent multiple starts
+      loadingStarted = true;
+      
       console.log('Starting main asset preload for index2.html');
+      
+      if (ASSETS.length === 0) {
+        console.log('No assets to preload, completing immediately');
+        actualProgress = 100;
+        animateProgress();
+        return;
+      }
       
       ASSETS.forEach((url, index) => {
         if (url.endsWith('.mp4')) {
+          // Handle video preloading
           const video = document.createElement('video');
           video.preload = 'auto';
-          video.src = url;
-          video.oncanplaythrough = () => {
+          video.muted = true; // Required for autoplay policies
+          
+          const handleVideoLoad = () => {
             loadedAssets++;
-            console.log(`Video preloaded: ${url}`);
+            console.log(`Video preloaded: ${url} (${loadedAssets}/${totalAssets})`);
             updateProgress();
+            cleanup();
+          };
+          
+          const handleVideoError = () => {
+            loadedAssets++;
+            console.log(`Video failed to preload: ${url} (${loadedAssets}/${totalAssets})`);
+            updateProgress();
+            cleanup();
+          };
+          
+          const cleanup = () => {
             video.oncanplaythrough = null;
-          };
-          video.onerror = () => {
-            loadedAssets++;
-            console.log(`Video failed to preload: ${url}`);
-            updateProgress();
             video.onerror = null;
+            video.ontimeout = null;
           };
+          
+          video.oncanplaythrough = handleVideoLoad;
+          video.onerror = handleVideoError;
+          
           // Timeout fallback for video loading
           setTimeout(() => {
             if (video.oncanplaythrough) {
-              loadedAssets++;
               console.log(`Video loading timeout: ${url}`);
-              updateProgress();
-              video.oncanplaythrough = null;
+              handleVideoError();
             }
-          }, 10000);
+          }, 8000);
+          
+          video.src = url;
         } else {
+          // Handle image preloading
           const img = new Image();
-          img.src = url;
+          
           img.onload = () => {
             loadedAssets++;
+            console.log(`Image preloaded: ${url} (${loadedAssets}/${totalAssets})`);
             updateProgress();
           };
+          
           img.onerror = () => {
             loadedAssets++;
+            console.log(`Image failed to preload: ${url} (${loadedAssets}/${totalAssets})`);
             updateProgress();
           };
+          
+          img.src = url;
         }
       });
     }
 
-    // Start priority loading immediately when DOM is ready
-    document.addEventListener('DOMContentLoaded', () => {
-      console.log('DOM loaded, starting priority asset loading');
-      setTimeout(() => {
-        loadPriorityAssets();
-      }, 100);
-    });
+    // Initialize everything
+    function init() {
+      console.log('Initializing preloader...');
+      buildAssetList();
+      loadPriorityAssets();
+    }
+
+    // Start when DOM is ready
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', init);
+    } else {
+      init();
+    }
 
     // Fallback for older browsers
     window.addEventListener('load', () => {
-      if (loadingGifEl.style.opacity !== '1') {
-        console.log('Window loaded fallback - starting priority loading');
-        loadPriorityAssets();
+      if (!loadingStarted) {
+        console.log('Window load fallback triggered');
+        init();
       }
     });
 
-    // Handle orientation changes
+    // Handle orientation changes on mobile (reload if device type changes)
     window.addEventListener('resize', () => {
       const newIsMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || 
                          ('ontouchstart' in window) || 
@@ -331,7 +387,7 @@
                          (window.innerWidth <= 768);
       
       if (newIsMobile !== isMobile) {
-        console.log('Device type changed, reloading...');
+        console.log('Device type changed during loading, reloading...');
         location.reload();
       }
     });
