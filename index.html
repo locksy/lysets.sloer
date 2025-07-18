@@ -267,116 +267,142 @@
     function preloadMainAssets() {
       console.log('Starting main asset preload for index2.html');
       console.log('User Agent:', navigator.userAgent);
+      console.log('Is Mobile:', isMobile);
       console.log('Assets to load:', ASSETS);
       
-      let timeoutIds = []; // Track all timeouts for cleanup
+      let completedAssets = 0;
+      let failedAssets = 0;
       
-      ASSETS.forEach((url, index) => {
-        console.log(`[${index + 1}/${ASSETS.length}] Starting load: ${url}`);
-        
-        if (url.endsWith('.mp4')) {
-          const video = document.createElement('video');
+      // Force progress update every 2 seconds as fallback
+      const progressForcer = setInterval(() => {
+        if (loadedAssets < totalAssets) {
+          console.log(`Progress forcer: ${loadedAssets}/${totalAssets} loaded, forcing +1`);
+          loadedAssets++;
+          updateProgress();
           
-          // Opera Mobile specific settings
-          video.preload = 'metadata'; // Less aggressive preloading for Opera
-          video.muted = true;
-          video.playsInline = true;
-          video.crossOrigin = 'anonymous';
-          
-          video.src = url;
-          
-          let completed = false;
-          
-          const completeLoad = (reason) => {
-            if (completed) return;
-            completed = true;
-            
-            loadedAssets++;
-            console.log(`[${index + 1}/${ASSETS.length}] Video ${reason}: ${url}`);
-            updateProgress();
-            
-            // Clean up event listeners
-            video.oncanplaythrough = null;
-            video.onerror = null;
-            video.onloadeddata = null;
-          };
-          
-          // Shorter timeout for mobile/Opera
-          const timeoutDuration = isMobile ? 8000 : 10000;
-          const videoTimeout = setTimeout(() => {
-            completeLoad('timeout');
-          }, timeoutDuration);
-          timeoutIds.push(videoTimeout);
-          
-          // Multiple events for better compatibility
-          video.oncanplaythrough = () => {
-            clearTimeout(videoTimeout);
-            completeLoad('loaded successfully');
-          };
-          
-          video.onloadeddata = () => {
-            clearTimeout(videoTimeout);
-            completeLoad('loaded (basic data)');
-          };
-          
-          video.onerror = (e) => {
-            clearTimeout(videoTimeout);
-            completeLoad('failed to load');
-            console.error('Video error details:', e);
-          };
-          
+          // If we've been forcing progress for too long, just complete
+          if (loadedAssets >= totalAssets * 0.8) {
+            console.log('Force completing at 80%');
+            clearInterval(progressForcer);
+            actualProgress = 100;
+            if (!animationId) {
+              animateProgress();
+            }
+          }
         } else {
+          clearInterval(progressForcer);
+        }
+      }, 2000);
+      
+      // On mobile, try a lighter approach - skip video entirely
+      if (isMobile) {
+        console.log('Mobile detected - using lightweight loading');
+        
+        // Remove video from assets for mobile
+        const imageAssets = ASSETS.filter(url => !url.endsWith('.mp4'));
+        console.log('Loading only images on mobile:', imageAssets.length);
+        
+        // Load only first 10 images on mobile to speed things up
+        const limitedAssets = imageAssets.slice(0, 10);
+        
+        limitedAssets.forEach((url, index) => {
           const img = new Image();
-          img.crossOrigin = 'anonymous'; // Help with CORS issues
           
-          let completed = false;
-          
-          const completeImageLoad = (reason) => {
-            if (completed) return;
-            completed = true;
-            
+          const timeout = setTimeout(() => {
             loadedAssets++;
-            console.log(`[${index + 1}/${ASSETS.length}] Image ${reason}: ${url}`);
+            console.log(`[${index + 1}/${limitedAssets.length}] Image timeout: ${url}`);
             updateProgress();
-          };
-          
-          // Timeout for images too (some browsers hang on missing images)
-          const imgTimeout = setTimeout(() => {
-            completeImageLoad('timeout');
-          }, 5000);
-          timeoutIds.push(imgTimeout);
+          }, 3000); // Very short timeout
           
           img.onload = () => {
-            clearTimeout(imgTimeout);
-            completeImageLoad('loaded');
+            clearTimeout(timeout);
+            loadedAssets++;
+            console.log(`[${index + 1}/${limitedAssets.length}] Image loaded: ${url}`);
+            updateProgress();
           };
           
-          img.onerror = (e) => {
-            clearTimeout(imgTimeout);
-            completeImageLoad('failed');
-            console.error('Image error details:', e);
+          img.onerror = () => {
+            clearTimeout(timeout);
+            loadedAssets++;
+            console.log(`[${index + 1}/${limitedAssets.length}] Image failed: ${url}`);
+            updateProgress();
           };
           
           img.src = url;
-        }
-      });
-      
-      // Safety timeout - if loading takes too long, force completion
-      const safetyTimeout = setTimeout(() => {
-        if (loadedAssets < totalAssets) {
-          console.log(`Safety timeout triggered. Loaded: ${loadedAssets}/${totalAssets}`);
-          console.log('Clearing all pending timeouts and forcing completion...');
-          
-          // Clear all pending timeouts
-          timeoutIds.forEach(clearTimeout);
-          
-          // Force completion
+        });
+        
+        // Adjust total for mobile
+        totalAssets = limitedAssets.length;
+        
+        // Force completion after 10 seconds on mobile
+        setTimeout(() => {
+          console.log('Mobile force completion after 10s');
+          clearInterval(progressForcer);
           actualProgress = 100;
           if (!animationId) {
             animateProgress();
           }
-        }
-      }, isMobile ? 20000 : 30000); // Shorter timeout on mobile
+        }, 10000);
+        
+      } else {
+        // Desktop - normal loading
+        ASSETS.forEach((url, index) => {
+          console.log(`[${index + 1}/${ASSETS.length}] Starting load: ${url}`);
+          
+          if (url.endsWith('.mp4')) {
+            const video = document.createElement('video');
+            video.preload = 'metadata';
+            video.muted = true;
+            video.playsInline = true;
+            video.src = url;
+            
+            const timeout = setTimeout(() => {
+              loadedAssets++;
+              console.log(`[${index + 1}/${ASSETS.length}] Video timeout: ${url}`);
+              updateProgress();
+            }, 8000);
+            
+            video.oncanplaythrough = () => {
+              clearTimeout(timeout);
+              loadedAssets++;
+              console.log(`[${index + 1}/${ASSETS.length}] Video loaded: ${url}`);
+              updateProgress();
+            };
+            
+            video.onerror = () => {
+              clearTimeout(timeout);
+              loadedAssets++;
+              console.log(`[${index + 1}/${ASSETS.length}] Video failed: ${url}`);
+              updateProgress();
+            };
+            
+          } else {
+            const img = new Image();
+            
+            const timeout = setTimeout(() => {
+              loadedAssets++;
+              console.log(`[${index + 1}/${ASSETS.length}] Image timeout: ${url}`);
+              updateProgress();
+            }, 4000);
+            
+            img.onload = () => {
+              clearTimeout(timeout);
+              loadedAssets++;
+              console.log(`[${index + 1}/${ASSETS.length}] Image loaded: ${url}`);
+              updateProgress();
+            };
+            
+            img.onerror = () => {
+              clearTimeout(timeout);
+              loadedAssets++;
+              console.log(`[${index + 1}/${ASSETS.length}] Image failed: ${url}`);
+              updateProgress();
+            };
+            
+            img.src = url;
+          }
+        });
+      }
     }
 
     // Start priority loading immediately when DOM is ready
