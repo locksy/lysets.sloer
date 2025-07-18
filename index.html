@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>lysets.sloer loading</title>
+  <title>lysets.slør loading</title>
   <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@700&display=swap" rel="stylesheet">
   <style>
     html, body {
@@ -157,12 +157,11 @@
     const splash = document.getElementById('splash');
     const loadingGifEl = document.getElementById('loadingGif');
 
-    // Enhanced mobile detection including Opera Mobile
-    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Opera Mobi|Mobile|mobile/i.test(navigator.userAgent) || 
+    // Enhanced mobile detection
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || 
                      ('ontouchstart' in window) || 
                      (navigator.maxTouchPoints > 0) ||
-                     (window.innerWidth <= 768) ||
-                     (window.orientation !== undefined); // Additional check for mobile orientation API
+                     (window.innerWidth <= 768);
 
     console.log(`Detected device type: ${isMobile ? 'mobile' : 'desktop'}`);
 
@@ -186,7 +185,7 @@
       ASSETS.push(folder + i + '.JPG');
     }
     
-    // Add video based on device type for the NEXT page - MATCH INDEX2.HTML EXACTLY
+    // Add video based on device type for the NEXT page - FIXED FILENAME
     ASSETS.push(isMobile ? 'dispvid4-mobile.mp4' : 'dispvid4.mp4');
     
     totalAssets = ASSETS.length;
@@ -266,117 +265,46 @@
 
     function preloadMainAssets() {
       console.log('Starting main asset preload for index2.html');
-      console.log('User Agent:', navigator.userAgent);
-      console.log('Is Mobile:', isMobile);
-      console.log('Assets to load:', ASSETS);
-      
-      // Add detailed progress logging
-      const logProgress = () => {
-        const percent = Math.round((loadedAssets / totalAssets) * 100);
-        console.log(`=== PROGRESS UPDATE ===`);
-        console.log(`Loaded: ${loadedAssets}/${totalAssets} (${percent}%)`);
-        console.log(`Actual Progress: ${actualProgress}%`);
-        console.log(`Smooth Progress: ${smoothProgress}%`);
-        console.log(`========================`);
-      };
       
       ASSETS.forEach((url, index) => {
-        console.log(`[${index + 1}/${ASSETS.length}] STARTING: ${url}`);
-        
         if (url.endsWith('.mp4')) {
           const video = document.createElement('video');
-          video.preload = 'metadata';
-          video.muted = true;
-          video.playsInline = true;
+          video.preload = 'auto';
           video.src = url;
-          
-          let videoCompleted = false;
-          
-          const completeVideo = (reason) => {
-            if (videoCompleted) {
-              console.log(`[${index + 1}] Video already completed, ignoring: ${reason}`);
-              return;
-            }
-            videoCompleted = true;
+          video.oncanplaythrough = () => {
             loadedAssets++;
-            console.log(`[${index + 1}/${ASSETS.length}] VIDEO ${reason.toUpperCase()}: ${url}`);
-            logProgress();
+            console.log(`Video preloaded: ${url}`);
             updateProgress();
+            video.oncanplaythrough = null;
           };
-          
-          // Shorter timeout for mobile
-          const videoTimeout = setTimeout(() => {
-            console.log(`[${index + 1}] Video timeout triggered for: ${url}`);
-            completeVideo('TIMEOUT');
-          }, isMobile ? 6000 : 10000);
-          
-          video.addEventListener('canplaythrough', () => {
-            console.log(`[${index + 1}] Video canplaythrough event: ${url}`);
-            clearTimeout(videoTimeout);
-            completeVideo('SUCCESS');
-          });
-          
-          video.addEventListener('loadeddata', () => {
-            console.log(`[${index + 1}] Video loadeddata event: ${url}`);
-            if (!videoCompleted) {
-              clearTimeout(videoTimeout);
-              completeVideo('LOADED_DATA');
+          video.onerror = () => {
+            loadedAssets++;
+            console.log(`Video failed to preload: ${url}`);
+            updateProgress();
+            video.onerror = null;
+          };
+          // Timeout fallback for video loading
+          setTimeout(() => {
+            if (video.oncanplaythrough) {
+              loadedAssets++;
+              console.log(`Video loading timeout: ${url}`);
+              updateProgress();
+              video.oncanplaythrough = null;
             }
-          });
-          
-          video.addEventListener('error', (e) => {
-            console.log(`[${index + 1}] Video error event:`, e, url);
-            clearTimeout(videoTimeout);
-            completeVideo('ERROR');
-          });
-          
+          }, 10000);
         } else {
           const img = new Image();
-          let imageCompleted = false;
-          
-          const completeImage = (reason) => {
-            if (imageCompleted) {
-              console.log(`[${index + 1}] Image already completed, ignoring: ${reason}`);
-              return;
-            }
-            imageCompleted = true;
+          img.src = url;
+          img.onload = () => {
             loadedAssets++;
-            console.log(`[${index + 1}/${ASSETS.length}] IMAGE ${reason.toUpperCase()}: ${url}`);
-            logProgress();
             updateProgress();
           };
-          
-          const imageTimeout = setTimeout(() => {
-            console.log(`[${index + 1}] Image timeout triggered for: ${url}`);
-            completeImage('TIMEOUT');
-          }, 4000);
-          
-          img.addEventListener('load', () => {
-            console.log(`[${index + 1}] Image load event: ${url}`);
-            clearTimeout(imageTimeout);
-            completeImage('SUCCESS');
-          });
-          
-          img.addEventListener('error', (e) => {
-            console.log(`[${index + 1}] Image error event:`, e, url);
-            clearTimeout(imageTimeout);
-            completeImage('ERROR');
-          });
-          
-          img.src = url;
+          img.onerror = () => {
+            loadedAssets++;
+            updateProgress();
+          };
         }
       });
-      
-      // Emergency fallback - if absolutely nothing happens for 15 seconds
-      setTimeout(() => {
-        console.log('=== EMERGENCY FALLBACK TRIGGERED ===');
-        console.log(`Current state: ${loadedAssets}/${totalAssets}`);
-        console.log('Forcing completion...');
-        actualProgress = 100;
-        if (!animationId) {
-          animateProgress();
-        }
-      }, 15000);
     }
 
     // Start priority loading immediately when DOM is ready
@@ -395,13 +323,12 @@
       }
     });
 
-    // Handle orientation changes - include Opera Mobile detection
+    // Handle orientation changes
     window.addEventListener('resize', () => {
-      const newIsMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Opera Mobi|Mobile|mobile/i.test(navigator.userAgent) || 
+      const newIsMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || 
                          ('ontouchstart' in window) || 
                          (navigator.maxTouchPoints > 0) ||
-                         (window.innerWidth <= 768) ||
-                         (window.orientation !== undefined);
+                         (window.innerWidth <= 768);
       
       if (newIsMobile !== isMobile) {
         console.log('Device type changed, reloading...');
