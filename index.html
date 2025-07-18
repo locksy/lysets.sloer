@@ -270,139 +270,113 @@
       console.log('Is Mobile:', isMobile);
       console.log('Assets to load:', ASSETS);
       
-      let completedAssets = 0;
-      let failedAssets = 0;
+      // Add detailed progress logging
+      const logProgress = () => {
+        const percent = Math.round((loadedAssets / totalAssets) * 100);
+        console.log(`=== PROGRESS UPDATE ===`);
+        console.log(`Loaded: ${loadedAssets}/${totalAssets} (${percent}%)`);
+        console.log(`Actual Progress: ${actualProgress}%`);
+        console.log(`Smooth Progress: ${smoothProgress}%`);
+        console.log(`========================`);
+      };
       
-      // Force progress update every 2 seconds as fallback
-      const progressForcer = setInterval(() => {
-        if (loadedAssets < totalAssets) {
-          console.log(`Progress forcer: ${loadedAssets}/${totalAssets} loaded, forcing +1`);
-          loadedAssets++;
-          updateProgress();
+      ASSETS.forEach((url, index) => {
+        console.log(`[${index + 1}/${ASSETS.length}] STARTING: ${url}`);
+        
+        if (url.endsWith('.mp4')) {
+          const video = document.createElement('video');
+          video.preload = 'metadata';
+          video.muted = true;
+          video.playsInline = true;
+          video.src = url;
           
-          // If we've been forcing progress for too long, just complete
-          if (loadedAssets >= totalAssets * 0.8) {
-            console.log('Force completing at 80%');
-            clearInterval(progressForcer);
-            actualProgress = 100;
-            if (!animationId) {
-              animateProgress();
+          let videoCompleted = false;
+          
+          const completeVideo = (reason) => {
+            if (videoCompleted) {
+              console.log(`[${index + 1}] Video already completed, ignoring: ${reason}`);
+              return;
             }
-          }
+            videoCompleted = true;
+            loadedAssets++;
+            console.log(`[${index + 1}/${ASSETS.length}] VIDEO ${reason.toUpperCase()}: ${url}`);
+            logProgress();
+            updateProgress();
+          };
+          
+          // Shorter timeout for mobile
+          const videoTimeout = setTimeout(() => {
+            console.log(`[${index + 1}] Video timeout triggered for: ${url}`);
+            completeVideo('TIMEOUT');
+          }, isMobile ? 6000 : 10000);
+          
+          video.addEventListener('canplaythrough', () => {
+            console.log(`[${index + 1}] Video canplaythrough event: ${url}`);
+            clearTimeout(videoTimeout);
+            completeVideo('SUCCESS');
+          });
+          
+          video.addEventListener('loadeddata', () => {
+            console.log(`[${index + 1}] Video loadeddata event: ${url}`);
+            if (!videoCompleted) {
+              clearTimeout(videoTimeout);
+              completeVideo('LOADED_DATA');
+            }
+          });
+          
+          video.addEventListener('error', (e) => {
+            console.log(`[${index + 1}] Video error event:`, e, url);
+            clearTimeout(videoTimeout);
+            completeVideo('ERROR');
+          });
+          
         } else {
-          clearInterval(progressForcer);
-        }
-      }, 2000);
-      
-      // On mobile, try a lighter approach - skip video entirely
-      if (isMobile) {
-        console.log('Mobile detected - using lightweight loading');
-        
-        // Remove video from assets for mobile
-        const imageAssets = ASSETS.filter(url => !url.endsWith('.mp4'));
-        console.log('Loading only images on mobile:', imageAssets.length);
-        
-        // Load only first 10 images on mobile to speed things up
-        const limitedAssets = imageAssets.slice(0, 10);
-        
-        limitedAssets.forEach((url, index) => {
           const img = new Image();
+          let imageCompleted = false;
           
-          const timeout = setTimeout(() => {
+          const completeImage = (reason) => {
+            if (imageCompleted) {
+              console.log(`[${index + 1}] Image already completed, ignoring: ${reason}`);
+              return;
+            }
+            imageCompleted = true;
             loadedAssets++;
-            console.log(`[${index + 1}/${limitedAssets.length}] Image timeout: ${url}`);
-            updateProgress();
-          }, 3000); // Very short timeout
-          
-          img.onload = () => {
-            clearTimeout(timeout);
-            loadedAssets++;
-            console.log(`[${index + 1}/${limitedAssets.length}] Image loaded: ${url}`);
-            updateProgress();
-          };
-          
-          img.onerror = () => {
-            clearTimeout(timeout);
-            loadedAssets++;
-            console.log(`[${index + 1}/${limitedAssets.length}] Image failed: ${url}`);
+            console.log(`[${index + 1}/${ASSETS.length}] IMAGE ${reason.toUpperCase()}: ${url}`);
+            logProgress();
             updateProgress();
           };
+          
+          const imageTimeout = setTimeout(() => {
+            console.log(`[${index + 1}] Image timeout triggered for: ${url}`);
+            completeImage('TIMEOUT');
+          }, 4000);
+          
+          img.addEventListener('load', () => {
+            console.log(`[${index + 1}] Image load event: ${url}`);
+            clearTimeout(imageTimeout);
+            completeImage('SUCCESS');
+          });
+          
+          img.addEventListener('error', (e) => {
+            console.log(`[${index + 1}] Image error event:`, e, url);
+            clearTimeout(imageTimeout);
+            completeImage('ERROR');
+          });
           
           img.src = url;
-        });
-        
-        // Adjust total for mobile
-        totalAssets = limitedAssets.length;
-        
-        // Force completion after 10 seconds on mobile
-        setTimeout(() => {
-          console.log('Mobile force completion after 10s');
-          clearInterval(progressForcer);
-          actualProgress = 100;
-          if (!animationId) {
-            animateProgress();
-          }
-        }, 10000);
-        
-      } else {
-        // Desktop - normal loading
-        ASSETS.forEach((url, index) => {
-          console.log(`[${index + 1}/${ASSETS.length}] Starting load: ${url}`);
-          
-          if (url.endsWith('.mp4')) {
-            const video = document.createElement('video');
-            video.preload = 'metadata';
-            video.muted = true;
-            video.playsInline = true;
-            video.src = url;
-            
-            const timeout = setTimeout(() => {
-              loadedAssets++;
-              console.log(`[${index + 1}/${ASSETS.length}] Video timeout: ${url}`);
-              updateProgress();
-            }, 8000);
-            
-            video.oncanplaythrough = () => {
-              clearTimeout(timeout);
-              loadedAssets++;
-              console.log(`[${index + 1}/${ASSETS.length}] Video loaded: ${url}`);
-              updateProgress();
-            };
-            
-            video.onerror = () => {
-              clearTimeout(timeout);
-              loadedAssets++;
-              console.log(`[${index + 1}/${ASSETS.length}] Video failed: ${url}`);
-              updateProgress();
-            };
-            
-          } else {
-            const img = new Image();
-            
-            const timeout = setTimeout(() => {
-              loadedAssets++;
-              console.log(`[${index + 1}/${ASSETS.length}] Image timeout: ${url}`);
-              updateProgress();
-            }, 4000);
-            
-            img.onload = () => {
-              clearTimeout(timeout);
-              loadedAssets++;
-              console.log(`[${index + 1}/${ASSETS.length}] Image loaded: ${url}`);
-              updateProgress();
-            };
-            
-            img.onerror = () => {
-              clearTimeout(timeout);
-              loadedAssets++;
-              console.log(`[${index + 1}/${ASSETS.length}] Image failed: ${url}`);
-              updateProgress();
-            };
-            
-            img.src = url;
-          }
-        });
-      }
+        }
+      });
+      
+      // Emergency fallback - if absolutely nothing happens for 15 seconds
+      setTimeout(() => {
+        console.log('=== EMERGENCY FALLBACK TRIGGERED ===');
+        console.log(`Current state: ${loadedAssets}/${totalAssets}`);
+        console.log('Forcing completion...');
+        actualProgress = 100;
+        if (!animationId) {
+          animateProgress();
+        }
+      }, 15000);
     }
 
     // Start priority loading immediately when DOM is ready
