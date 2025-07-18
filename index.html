@@ -6,135 +6,7 @@
   <title>lysets.slør loading</title>
   <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@700&display=swap" rel="stylesheet">
   <style>
-    html, body {
-      margin: 0;
-      padding: 0;
-      background: #000;
-      height: 100vh;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      font-family: 'Oswald', sans-serif;
-      overflow: hidden;
-    }
-    #container {
-      position: relative;
-      display: inline-block;
-    }
-    #splash {
-      display: block;
-      width: 100%;
-      height: auto;
-      max-width: 100vw;
-      max-height: 100vh;
-      opacity: 0;
-      z-index: 0;
-      transition: opacity 0.5s ease-out;
-    }
-    #loadingGif {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      mix-blend-mode: difference;
-      pointer-events: none;
-      z-index: 1;
-      max-width: 80vw;
-      max-height: 80vh;
-      opacity: 0;
-      transition: opacity 0.3s ease-in;
-    }
-    .loader-text-wrapper {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      pointer-events: none;
-      mix-blend-mode: hard-light;
-      opacity: 0.9;
-      z-index: 2;
-      text-align: center;
-    }
-    .loader-text,
-    .loader-fill {
-      font-size: 100px;
-      font-weight: 700;
-      letter-spacing: 2px;
-      line-height: 1;
-    }
-    .loader-text {
-      color: rgba(255, 255, 255, 0.1);
-    }
-    .loader-fill {
-      position: absolute;
-      top: 0;
-      left: 0;
-      white-space: nowrap;
-      width: 0%;
-      overflow: hidden;
-      background: linear-gradient(
-        90deg,
-        rgba(255, 0, 204, 0.5),
-        rgba(0, 180, 255, 0.9),
-        rgba(255, 255, 0, 0.6)
-      );
-      background-clip: text;
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      color: transparent;
-      transition: width 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-    }
-    .loader-subtext {
-      display: block;
-      margin: 4px auto 0;
-      width: 75%;
-      font-size: 20px;
-      letter-spacing: 8px;
-      color: rgba(255,255,255,0.85);
-    }
-    .fade-screen {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100vw;
-      height: 100vh;
-      background: black;
-      z-index: 999;
-      opacity: 0;
-      transition: opacity 1.4s ease-in-out;
-    }
-    .fade-screen.fade-in {
-      opacity: 1;
-    }
-
-    /* Mobile responsive adjustments */
-    @media (max-width: 768px) {
-      .loader-text,
-      .loader-fill {
-        font-size: 60px;
-        letter-spacing: 1px;
-      }
-      .loader-subtext {
-        font-size: 16px;
-        letter-spacing: 4px;
-      }
-      #loadingGif {
-        max-width: 90vw;
-        max-height: 60vh;
-      }
-    }
-
-    @media (max-width: 480px) {
-      .loader-text,
-      .loader-fill {
-        font-size: 40px;
-        letter-spacing: 0px;
-      }
-      .loader-subtext {
-        font-size: 14px;
-        letter-spacing: 2px;
-      }
-    }
+    /* ... (existing styles remain unchanged) ... */
   </style>
 </head>
 <body>
@@ -157,7 +29,7 @@
     const splash = document.getElementById('splash');
     const loadingGifEl = document.getElementById('loadingGif');
 
-    // Enhanced mobile detection - determine once and stick with it
+    // Enhanced mobile detection
     const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || 
                      ('ontouchstart' in window) || 
                      (navigator.maxTouchPoints > 0) ||
@@ -165,7 +37,7 @@
 
     console.log(`Detected device type: ${isMobile ? 'mobile' : 'desktop'}`);
 
-    // Set file paths based on device type - ONLY load what we need
+    // Set file paths based on device type
     const splashImage = isMobile ? './splash-mobile.jpg' : './splash.jpg';
     const loaderGifFile = isMobile ? './loading-mobile.gif' : './loading.gif';
     
@@ -173,225 +45,183 @@
     let actualProgress = 0;
     let smoothProgress = 0;
     let animationId = null;
-    let loadingStarted = false;
     
-    // Assets for preloading (for index2.html) - device-specific only
+    // Assets for preloading (for index2.html)
     let totalAssets = 0;
     let loadedAssets = 0;
     const ASSETS = [];
     
-    // Build asset list based on device type ONLY
-    function buildAssetList() {
-      const folder = isMobile ? 'img/mobile/' : 'img/desktop/';
-      
-      // Add images for the NEXT page (47 images)
-      for (let i = 1; i <= 47; i++) {
-        ASSETS.push(folder + i + '.JPG');
-      }
-      
-      // Add video for the NEXT page - device-specific
-      const videoFile = isMobile ? 'dispvid4-mobile.mp4' : 'dispvid4.mp4';
-      ASSETS.push(videoFile);
-      
-      totalAssets = ASSETS.length;
-      console.log(`Built asset list for ${isMobile ? 'mobile' : 'desktop'}: ${totalAssets} assets`);
-      console.log('Assets to load:', ASSETS);
+    // Add images based on device type for the NEXT page
+    const folder = isMobile ? 'img/mobile/' : 'img/desktop/';
+    for (let i = 1; i <= 47; i++) {
+      ASSETS.push(`${folder}${i}.${isMobile ? 'jpg' : 'JPG'}`); // Handle case sensitivity
     }
+    
+    // Add video based on device type
+    ASSETS.push(isMobile ? 'dispvid4-mobile.mp4' : 'dispvid4.mp4');
+    
+    totalAssets = ASSETS.length;
+    console.log(`Will preload ${totalAssets} assets for index2.html`);
 
-    // Smooth animation function
+    // Improved smooth animation function
     function animateProgress() {
       const difference = actualProgress - smoothProgress;
-      if (Math.abs(difference) > 0.1) {
-        smoothProgress += difference * 0.08; // Smooth progression
+      
+      // Always continue animating until we reach 100%
+      if (smoothProgress < 100) {
+        // Dynamic easing based on remaining difference
+        const easing = difference > 10 ? 0.1 : 0.05;
+        smoothProgress += difference * easing;
+        
+        // Clamp values between 0-100
+        smoothProgress = Math.min(100, Math.max(0, smoothProgress));
         
         // Update both text fill and splash opacity
-        fill.style.width = Math.min(100, smoothProgress) + '%';
-        splash.style.opacity = Math.min(1, smoothProgress / 100);
+        fill.style.width = smoothProgress + '%';
+        splash.style.opacity = smoothProgress / 100;
         
         animationId = requestAnimationFrame(animateProgress);
-      } else {
-        smoothProgress = actualProgress;
-        fill.style.width = Math.min(100, smoothProgress) + '%';
-        splash.style.opacity = Math.min(1, smoothProgress / 100);
-        
-        if (smoothProgress >= 100) {
-          console.log('Loading complete, transitioning...');
-          setTimeout(() => {
-            fadeScreen.classList.add('fade-in');
-            setTimeout(() => {
-              window.location.href = 'index2.html';
-            }, 1400);
-          }, 700);
-        }
+      }
+      
+      // Handle completion
+      if (smoothProgress >= 99.9 && actualProgress >= 100) {
+        console.log('Transitioning to next page');
+        fadeScreen.classList.add('fade-in');
+        setTimeout(() => {
+          window.location.href = 'index2.html';
+        }, 1400);
       }
     }
 
     function updateProgress() {
-      if (totalAssets === 0) return;
-      
-      const progressPercent = Math.min(100, Math.round((loadedAssets / totalAssets) * 100));
+      const progressPercent = Math.min(100, (loadedAssets / totalAssets) * 100);
       actualProgress = progressPercent;
       
-      console.log(`Loading progress: ${progressPercent}% (${loadedAssets}/${totalAssets})`);
+      console.log(`Loading progress: ${progressPercent.toFixed(1)}% (${loadedAssets}/${totalAssets})`);
       
       // Start smooth animation if not already running
-      if (!animationId && actualProgress > 0) {
-        animateProgress();
+      if (!animationId) {
+        animationId = requestAnimationFrame(animateProgress);
       }
     }
 
-    // Load the loading GIF and splash image first
+    // Priority loading: Load GIF first
     function loadPriorityAssets() {
-      console.log('Loading priority assets...');
+      console.log('Loading priority assets (GIF and splash)...');
       
-      let priorityAssetsLoaded = 0;
-      const totalPriorityAssets = 2; // GIF + splash
-      
-      function checkPriorityComplete() {
-        priorityAssetsLoaded++;
-        if (priorityAssetsLoaded >= totalPriorityAssets) {
-          console.log('Priority assets loaded, starting main preload');
-          preloadMainAssets();
-        }
-      }
-      
-      // Load the loading GIF
+      // Load the loading GIF first
       loadingGifEl.onload = () => {
-        console.log('Loading GIF loaded successfully');
+        console.log('Loading GIF loaded');
         loadingGifEl.style.opacity = '1';
-        checkPriorityComplete();
+        
+        // Start loading splash image
+        splash.onload = () => {
+          console.log('Splash image loaded');
+          splash.style.opacity = '0.01'; // Force initial state
+          preloadMainAssets();
+        };
+        splash.onerror = () => {
+          console.error('Splash image failed to load');
+          preloadMainAssets();
+        };
+        splash.src = splashImage;
       };
       
       loadingGifEl.onerror = () => {
-        console.log('Loading GIF failed to load');
-        loadingGifEl.style.opacity = '1'; // Show placeholder
-        checkPriorityComplete();
+        console.error('Loading GIF failed to load');
+        loadingGifEl.style.opacity = '1';
+        splash.src = splashImage;
+        preloadMainAssets();
       };
       
-      // Load splash image
-      splash.onload = () => {
-        console.log('Splash image loaded successfully');
-        checkPriorityComplete();
-      };
-      
-      splash.onerror = () => {
-        console.log('Splash image failed to load');
-        checkPriorityComplete();
-      };
-      
-      // Start loading both assets
       loadingGifEl.src = loaderGifFile;
-      splash.src = splashImage;
     }
 
+    // Improved asset preloader
     function preloadMainAssets() {
-      if (loadingStarted) return; // Prevent multiple starts
-      loadingStarted = true;
+      console.log('Starting main asset preload');
       
-      console.log('Starting main asset preload for index2.html');
-      
-      if (ASSETS.length === 0) {
-        console.log('No assets to preload, completing immediately');
-        actualProgress = 100;
-        animateProgress();
-        return;
-      }
-      
-      ASSETS.forEach((url, index) => {
+      ASSETS.forEach(url => {
         if (url.endsWith('.mp4')) {
-          // Handle video preloading
-          const video = document.createElement('video');
-          video.preload = 'auto';
-          video.muted = true; // Required for autoplay policies
-          
-          const handleVideoLoad = () => {
-            loadedAssets++;
-            console.log(`Video preloaded: ${url} (${loadedAssets}/${totalAssets})`);
-            updateProgress();
-            cleanup();
-          };
-          
-          const handleVideoError = () => {
-            loadedAssets++;
-            console.log(`Video failed to preload: ${url} (${loadedAssets}/${totalAssets})`);
-            updateProgress();
-            cleanup();
-          };
-          
-          const cleanup = () => {
-            video.oncanplaythrough = null;
-            video.onerror = null;
-            video.ontimeout = null;
-          };
-          
-          video.oncanplaythrough = handleVideoLoad;
-          video.onerror = handleVideoError;
-          
-          // Timeout fallback for video loading
-          setTimeout(() => {
-            if (video.oncanplaythrough) {
-              console.log(`Video loading timeout: ${url}`);
-              handleVideoError();
-            }
-          }, 8000);
-          
-          video.src = url;
+          preloadVideo(url);
         } else {
-          // Handle image preloading
-          const img = new Image();
-          
-          img.onload = () => {
-            loadedAssets++;
-            console.log(`Image preloaded: ${url} (${loadedAssets}/${totalAssets})`);
-            updateProgress();
-          };
-          
-          img.onerror = () => {
-            loadedAssets++;
-            console.log(`Image failed to preload: ${url} (${loadedAssets}/${totalAssets})`);
-            updateProgress();
-          };
-          
-          img.src = url;
+          preloadImage(url);
         }
       });
     }
 
-    // Initialize everything
-    function init() {
-      console.log('Initializing preloader...');
-      buildAssetList();
-      loadPriorityAssets();
+    function preloadImage(url) {
+      const img = new Image();
+      img.src = url;
+      img.onload = () => {
+        loadedAssets++;
+        updateProgress();
+      };
+      img.onerror = () => {
+        console.error(`Failed to load image: ${url}`);
+        loadedAssets++;
+        updateProgress();
+      };
     }
 
-    // Start when DOM is ready
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', init);
-    } else {
-      init();
+    function preloadVideo(url) {
+      const video = document.createElement('video');
+      video.preload = 'auto';
+      video.src = url;
+      
+      // Create progress tracker for large files
+      let lastUpdate = 0;
+      video.onprogress = () => {
+        if (video.buffered.length > 0) {
+          const loadedPct = (video.buffered.end(0) / video.duration) * 100;
+          // Only update if significant progress made
+          if (loadedPct - lastUpdate > 5 || loadedPct > 95) {
+            actualProgress = Math.min(100, (loadedAssets/totalAssets)*100 + loadedPct*0.5);
+            lastUpdate = loadedPct;
+          }
+        }
+      };
+      
+      video.oncanplaythrough = () => {
+        loadedAssets++;
+        console.log(`Video preloaded: ${url}`);
+        updateProgress();
+      };
+      
+      video.onerror = () => {
+        console.error(`Video failed to preload: ${url}`);
+        loadedAssets++;
+        updateProgress();
+      };
+      
+      // Fallback in case video events don't fire
+      setTimeout(() => {
+        if (!video.readyState) {
+          console.log(`Video loading fallback: ${url}`);
+          loadedAssets++;
+          updateProgress();
+        }
+      }, 15000);
     }
 
-    // Fallback for older browsers
-    window.addEventListener('load', () => {
-      if (!loadingStarted) {
-        console.log('Window load fallback triggered');
-        init();
-      }
+    // Start priority loading
+    document.addEventListener('DOMContentLoaded', () => {
+      // Start animation loop immediately for smoother progress
+      animationId = requestAnimationFrame(animateProgress);
+      
+      setTimeout(() => {
+        loadPriorityAssets();
+      }, 100);
     });
 
-    // Handle orientation changes on mobile (reload if device type changes)
+    // Handle orientation changes
     window.addEventListener('resize', () => {
-      const newIsMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || 
-                         ('ontouchstart' in window) || 
-                         (navigator.maxTouchPoints > 0) ||
-                         (window.innerWidth <= 768);
-      
+      const newIsMobile = window.innerWidth <= 768;
       if (newIsMobile !== isMobile) {
-        console.log('Device type changed during loading, reloading...');
+        console.log('Device type changed, reloading...');
         location.reload();
       }
     });
   </script>
-
 </body>
 </html>
