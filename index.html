@@ -244,11 +244,10 @@
                      (navigator.maxTouchPoints > 0) ||
                      (window.innerWidth <= 768);
 
-    // Performance detection
-    const isLowPerformance = isMobile && (
-      /Android.*4\.|iPhone.*OS [5-9]_/i.test(navigator.userAgent) ||
-      window.innerWidth <= 480 ||
-      navigator.hardwareConcurrency <= 2
+    // Performance detection - only disable for very old devices
+    const isLowPerformance = (
+      /Android.*[2-4]\.|iPhone.*OS [4-8]_/i.test(navigator.userAgent) ||
+      (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 1)
     );
 
     console.log(`Device: ${isMobile ? 'mobile' : 'desktop'}, Low perf: ${isLowPerformance}`);
@@ -274,9 +273,12 @@
     let shaderProgram = null;
     let animationFrameId = null;
 
-    if (!gl || isLowPerformance) {
-      console.warn('WebGL not supported or low performance device, shader background disabled');
+    if (!gl) {
+      console.warn('WebGL not supported, shader background disabled');
       canvas.style.display = 'none';
+    } else if (isLowPerformance) {
+      console.warn('Low performance device detected, using simplified shader');
+      canvas.style.opacity = '0.3';
     } else {
       // Vertex shader source
       const vertexShaderSource = `
@@ -288,7 +290,7 @@
 
       // Fragment shader source with mobile optimizations
       const fragmentShaderSource = `
-        precision ${isMobile ? 'lowp' : 'mediump'} float;
+        precision ${isMobile ? 'mediump' : 'mediump'} float;
         uniform float iTime;
         uniform vec2 iResolution;
 
@@ -313,9 +315,9 @@
           float l = 0.0;
           
           // Reduce iterations on mobile for better performance
-          int maxIter = ${isMobile ? '30' : '60'};
+          int maxIter = ${isMobile ? '40' : '60'};
           
-          for(int iter = 0; iter < ${isMobile ? '30' : '60'}; iter++) {
+          for(int iter = 0; iter < ${isMobile ? '40' : '60'}; iter++) {
             if(iter >= maxIter) break;
             
             i += 1.0;
@@ -469,19 +471,27 @@
     let smoothProgress = 0;
     let progressAnimationId = null;
     
+    // Debug mode - set to true to skip asset loading and test animation
+    const DEBUG_MODE = false;
+    
     // Assets for preloading
     let totalAssets = 0;
     let loadedAssets = 0;
     const ASSETS = [];
     
-    // Add images based on device type
-    const folder = isMobile ? 'img/mobile/' : 'img/desktop/';
-    for (let i = 1; i <= 47; i++) {
-      ASSETS.push(folder + i + '.JPG');
+    if (!DEBUG_MODE) {
+      // Add images based on device type
+      const folder = isMobile ? 'img/mobile/' : 'img/desktop/';
+      for (let i = 1; i <= 47; i++) {
+        ASSETS.push(folder + i + '.JPG');
+      }
+      
+      // Add video based on device type
+      ASSETS.push(isMobile ? 'dispvid4-mobile.mp4' : 'dispvid4.mp4');
+    } else {
+      // In debug mode, add fake assets for testing
+      ASSETS.push('fake1.jpg', 'fake2.jpg', 'fake3.jpg');
     }
-    
-    // Add video based on device type
-    ASSETS.push(isMobile ? 'dispvid4-mobile.mp4' : 'dispvid4.mp4');
     
     totalAssets = ASSETS.length;
     console.log(`Will preload ${totalAssets} assets for index2.html`);
@@ -558,55 +568,129 @@
     function preloadMainAssets() {
       console.log('Starting asset preload');
       
-      ASSETS.forEach((url) => {
+      if (DEBUG_MODE) {
+        // Simple test mode - simulate loading
+        console.log('DEBUG MODE: Simulating asset loading');
+        let simulatedProgress = 0;
+        const simulateInterval = setInterval(() => {
+          simulatedProgress += 10;
+          loadedAssets = Math.floor((simulatedProgress / 100) * totalAssets);
+          actualProgress = simulatedProgress;
+          
+          console.log(`Simulated progress: ${simulatedProgress}%`);
+          
+          if (!progressAnimationId) {
+            animateProgress();
+          }
+          
+          if (simulatedProgress >= 100) {
+            clearInterval(simulateInterval);
+          }
+        }, 500);
+        return;
+      }
+      
+      // Add fallback timer in case assets fail to load
+      const fallbackTimer = setTimeout(() => {
+        console.log('Fallback timer triggered - forcing completion');
+        actualProgress = 100;
+        if (!progressAnimationId) {
+          animateProgress();
+        }
+      }, 30000); // 30 second fallback
+      
+      let completedAssets = 0;
+      
+      ASSETS.forEach((url, index) => {
+        console.log(`Loading asset ${index + 1}/${ASSETS.length}: ${url}`);
+        
         if (url.endsWith('.mp4')) {
           const video = document.createElement('video');
-          video.preload = 'metadata'; // Use metadata instead of auto on mobile
-          video.muted = true; // Required for autoplay on mobile
+          video.preload = 'metadata';
+          video.muted = true;
+          video.crossOrigin = 'anonymous';
           video.src = url;
           
           const videoTimeout = setTimeout(() => {
-            if (video.oncanplaythrough || video.onloadedmetadata) {
-              loadedAssets++;
-              updateProgress();
-              video.oncanplaythrough = null;
-              video.onloadedmetadata = null;
-            }
-          }, isMobile ? 15000 : 10000); // Longer timeout for mobile
-          
-          video.oncanplaythrough = () => {
-            clearTimeout(videoTimeout);
+            console.log(`Video timeout for: ${url}`);
+            completedAssets++;
             loadedAssets++;
             updateProgress();
-          };
+            if (completedAssets === ASSETS.length) {
+              clearTimeout(fallbackTimer);
+            }
+          }, isMobile ? 8000 : 5000);
           
-          video.onloadedmetadata = () => {
-            if (!video.oncanplaythrough) {
-              clearTimeout(videoTimeout);
-              loadedAssets++;
-              updateProgress();
+          const handleVideoLoad = () => {
+            console.log(`Video loaded: ${url}`);
+            clearTimeout(videoTimeout);
+            completedAssets++;
+            loadedAssets++;
+            updateProgress();
+            if (completedAssets === ASSETS.length) {
+              clearTimeout(fallbackTimer);
             }
           };
           
-          video.onerror = () => {
+          video.oncanplaythrough = handleVideoLoad;
+          video.onloadedmetadata = handleVideoLoad;
+          video.onerror = (e) => {
+            console.log(`Video error for ${url}:`, e);
             clearTimeout(videoTimeout);
+            completedAssets++;
             loadedAssets++;
             updateProgress();
+            if (completedAssets === ASSETS.length) {
+              clearTimeout(fallbackTimer);
+            }
           };
         } else {
           const img = new Image();
           img.crossOrigin = 'anonymous';
-          img.src = url;
+          
+          const imageTimeout = setTimeout(() => {
+            console.log(`Image timeout for: ${url}`);
+            completedAssets++;
+            loadedAssets++;
+            updateProgress();
+            if (completedAssets === ASSETS.length) {
+              clearTimeout(fallbackTimer);
+            }
+          }, 5000);
+          
           img.onload = () => {
+            console.log(`Image loaded: ${url}`);
+            clearTimeout(imageTimeout);
+            completedAssets++;
             loadedAssets++;
             updateProgress();
+            if (completedAssets === ASSETS.length) {
+              clearTimeout(fallbackTimer);
+            }
           };
-          img.onerror = () => {
+          
+          img.onerror = (e) => {
+            console.log(`Image error for ${url}:`, e);
+            clearTimeout(imageTimeout);
+            completedAssets++;
             loadedAssets++;
             updateProgress();
+            if (completedAssets === ASSETS.length) {
+              clearTimeout(fallbackTimer);
+            }
           };
+          
+          img.src = url;
         }
       });
+      
+      // If no assets to load, complete immediately
+      if (ASSETS.length === 0) {
+        console.log('No assets to load, completing immediately');
+        clearTimeout(fallbackTimer);
+        actualProgress = 100;
+        animateProgress();
+      }
     }
 
     // Enhanced page visibility handling
