@@ -2,229 +2,30 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="format-detection" content="telephone=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>lysets.slør loading</title>
   <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@700&display=swap" rel="stylesheet">
   <style>
-    html, body {
-      margin: 0;
-      padding: 0;
-      background: #000;
-      height: 100vh;
-      height: 100dvh; /* Dynamic viewport height for mobile */
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      font-family: 'Oswald', sans-serif;  
-      overflow: hidden;
-      position: fixed;
-      width: 100%;
-      -webkit-overflow-scrolling: touch;
-      -webkit-user-select: none;
-      -moz-user-select: none;
-      -ms-user-select: none;
-      user-select: none;
-      -webkit-touch-callout: none;
-      -webkit-tap-highlight-color: transparent;
-    }
-
-    /* Shader background */
-    #shader-canvas {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100vw;
-      height: 100vh;
-      height: 100dvh;
-      z-index: 100;
-      mix-blend-mode: lighten;
-      opacity: 1.0;
-      pointer-events: none;
-      will-change: transform;
-    }
-
-    #container {
-      position: relative;
-      display: inline-block;
-      z-index: 10;
-      will-change: transform;
-    }
-
-    #splash {
-      display: block;
-      width: 100%;
-      height: auto;
-      max-width: 100vw;
-      max-height: 100vh;
-      max-height: 100dvh;
-      opacity: 0;
-      z-index: 0;
-      transition: opacity 0.5s ease-out;
-      will-change: opacity;
-    }
-
-    #loadingGif {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      mix-blend-mode: lighten;
-      pointer-events: none;
-      z-index: 1;
-      max-width: 80vw;
-      max-height: 80vh;
-      max-height: 80dvh;
-      opacity: 0;
-      transition: opacity 0.3s ease-in;
-      will-change: opacity;
-    }
-
-    .loader-text-wrapper {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      pointer-events: none;
-      mix-blend-mode: hard-light;
-      opacity: 0.9;
-      z-index: 2;
-      text-align: center;
-      will-change: transform;
-    }
-
-    .loader-text,
-    .loader-fill {
-      font-size: clamp(40px, 8vw, 100px);
-      font-weight: 700;
-      letter-spacing: clamp(0px, 0.4vw, 2px);
-      line-height: 1;
-      text-rendering: optimizeSpeed;
-      -webkit-font-smoothing: antialiased;
-      -moz-osx-font-smoothing: grayscale;
-    }
-
-    .loader-text {
-      color: rgba(255, 255, 255, 0.1);
-    }
-
-    .loader-fill {
-      position: absolute;
-      top: 0;
-      left: 0;
-      white-space: nowrap;
-      width: 0%;
-      overflow: hidden;
-      background: linear-gradient(
-        90deg,
-        rgba(255, 0, 204, 0.5),
-        rgba(0, 180, 255, 0.9),
-        rgba(255, 255, 0, 0.6)
-      );
-      background-clip: text;
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      color: transparent;
-      transition: width 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-      will-change: width;
-    }
-
-    .loader-subtext {
-      display: block;
-      margin: 4px auto 0;
-      width: 75%;
-      font-size: clamp(14px, 3vw, 20px);
-      letter-spacing: clamp(2px, 1.5vw, 8px);
-      color: rgba(255,255,255,0.85);
-      text-rendering: optimizeSpeed;
-    }
-
-    .fade-screen {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100vw;
-      height: 100vh;
-      height: 100dvh;
-      background: black;
-      z-index: 999;
-      opacity: 0;
-      transition: opacity 1.4s ease-in-out;
-      will-change: opacity;
-    }
-
-    .fade-screen.fade-in {
-      opacity: 1;
-    }
-
-    /* Enhanced mobile optimizations */
-    @media (max-width: 768px) {
-      #loadingGif {
-        max-width: 90vw;
-        max-height: 60vh;
-        max-height: 60dvh;
-      }
-      
-      /* Reduce shader complexity on mobile */
-      #shader-canvas {
-        opacity: 0.7;
-      }
-    }
-
-    @media (max-width: 480px) {
-      #loadingGif {
-        max-width: 95vw;
-        max-height: 50vh;
-        max-height: 50dvh;
-      }
-      
-      #shader-canvas {
-        opacity: 0.5;
-      }
-    }
-
-    /* Landscape mobile adjustments */
-    @media (max-height: 500px) and (orientation: landscape) {
-      .loader-text,
-      .loader-fill {
-        font-size: clamp(30px, 6vh, 60px);
-      }
-      
-      .loader-subtext {
-        font-size: clamp(12px, 2.5vh, 16px);
-        letter-spacing: clamp(1px, 1vh, 4px);
-      }
-      
-      #loadingGif {
-        max-height: 70vh;
-        max-height: 70dvh;
-      }
-    }
-
-    /* High DPI displays */
-    @media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
-      .loader-text,
-      .loader-fill {
-        text-rendering: optimizeLegibility;
-      }
-    }
-
-    /* Performance mode for older devices */
-    @media (max-width: 480px) and (max-height: 800px) {
-      * {
-        transform: translateZ(0);
-        -webkit-transform: translateZ(0);
-      }
-    }
+    html, body { margin: 0; padding: 0; background: #000; height: 100vh; display: flex; justify-content: center; align-items: center; font-family: 'Oswald', sans-serif; overflow: hidden; }
+    #container { position: relative; display: inline-block; }
+    #splash { display: block; width: 100%; height: auto; max-width: 100vw; max-height: 100vh; opacity: 0; z-index: 0; transition: opacity 0.5s ease-out; }
+    #loadingGif { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); mix-blend-mode: lighten; pointer-events: none; z-index: 1; max-width: 80vw; max-height: 80vh; opacity: 0; transition: opacity 0.3s ease-in; }
+    .loader-text-wrapper { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); pointer-events: none; mix-blend-mode: hard-light; opacity: 0.9; z-index: 2; text-align: center; }
+    .loader-text, .loader-fill { font-size: 100px; font-weight: 700; letter-spacing: 2px; line-height: 1; }
+    .loader-text { color: rgba(255, 255, 255, 0.1); }
+    .loader-fill { position: absolute; top: 0; left: 0; white-space: nowrap; width: 0%; overflow: hidden; background: linear-gradient(90deg, rgba(255, 0, 204, 0.5), rgba(0, 180, 255, 0.9), rgba(255, 255, 0, 0.6)); background-clip: text; -webkit-background-clip: text; -webkit-text-fill-color: transparent; color: transparent; transition: width 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94); }
+    .loader-subtext { display: block; margin: 4px auto 0; width: 75%; font-size: 20px; letter-spacing: 8px; color: rgba(255,255,255,0.85); }
+    .fade-screen { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: black; z-index: 999; opacity: 0; transition: opacity 1.4s ease-in-out; }
+    .fade-screen.fade-in { opacity: 1; }
+    #shaderCanvas { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 10; mix-blend-mode: screen; opacity: 0; transition: opacity 1s ease-in-out; }
+    #shaderCanvas.active { opacity: 0.8; }
+    @media (max-width: 768px) { .loader-text, .loader-fill { font-size: 60px; letter-spacing: 1px; } .loader-subtext { font-size: 16px; letter-spacing: 4px; } #loadingGif { max-width: 90vw; max-height: 60vh; } }
+    @media (max-width: 480px) { .loader-text, .loader-fill { font-size: 40px; letter-spacing: 0px; } .loader-subtext { font-size: 14px; letter-spacing: 2px; } }
   </style>
 </head>
 <body>
 
-  <!-- Shader background -->
-  <canvas id="shader-canvas"></canvas>
-
+  <canvas id="shaderCanvas"></canvas>
   <div id="container">
     <img id="splash" src="" alt="Splash Image">
     <img id="loadingGif" src="" alt="Loading Animation">
@@ -234,527 +35,127 @@
       <div class="loader-subtext">loading</div>
     </div>
   </div>
-
   <div class="fade-screen" id="fadeScreen"></div>
 
   <script>
-    // Enhanced mobile detection with performance considerations
-    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || 
-                     ('ontouchstart' in window) || 
-                     (navigator.maxTouchPoints > 0) ||
-                     (window.innerWidth <= 768);
+    // --- Mobile Detection ---
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+      ('ontouchstart' in window) ||
+      (navigator.maxTouchPoints > 0) ||
+      (window.innerWidth <= 768);
+    // --- File selection ---
+    const splashImage = isMobile ? './splash-mobile.jpg' : './splash.jpg';
+    const loaderGifFile = isMobile ? './loading-mobile.gif' : './loading.gif';
+    const folder = isMobile ? 'img/mobile/' : 'img/desktop/';
+    const video = isMobile ? 'dispvid4-mobile.mp4' : 'dispvid4.mp4';
 
-    // Performance detection - only disable for very old devices
-    const isLowPerformance = (
-      /Android.*[2-4]\.|iPhone.*OS [4-8]_/i.test(navigator.userAgent) ||
-      (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 1)
-    );
-
-    console.log(`Device: ${isMobile ? 'mobile' : 'desktop'}, Low perf: ${isLowPerformance}`);
-
-    // Shader setup with mobile optimizations
-    const canvas = document.getElementById('shader-canvas');
-    const gl = canvas.getContext('webgl', {
-      alpha: false,
-      depth: false,
-      stencil: false,
-      antialias: false,
-      powerPreference: isMobile ? 'low-power' : 'high-performance',
-      preserveDrawingBuffer: false,
-      failIfMajorPerformanceCaveat: isLowPerformance
-    }) || canvas.getContext('experimental-webgl', {
-      alpha: false,
-      depth: false,
-      stencil: false,
-      antialias: false,
-      powerPreference: isMobile ? 'low-power' : 'high-performance'
-    });
-    
-    let shaderProgram = null;
-    let animationFrameId = null;
-
-    if (!gl) {
-      console.warn('WebGL not supported, shader background disabled');
-      canvas.style.display = 'none';
-    } else if (isLowPerformance) {
-      console.warn('Low performance device detected, using simplified shader');
-      canvas.style.opacity = '0.3';
-    } else {
-      // Vertex shader source
-      const vertexShaderSource = `
-        attribute vec2 a_position;
-        void main() {
-          gl_Position = vec4(a_position, 0.0, 1.0);
-        }
-      `;
-
-      // Fragment shader source with mobile optimizations
-      const fragmentShaderSource = `
-        precision ${isMobile ? 'mediump' : 'mediump'} float;
-        uniform float iTime;
-        uniform vec2 iResolution;
-
-        // Optimized tanh approximation
-        float tanh_approx(float x) {
-          float x2 = x * x;
-          return x * (27.0 + x2) / (27.0 + 9.0 * x2);
-        }
-
-        vec4 tanh_approx_vec4(vec4 v) {
-          return vec4(tanh_approx(v.x), tanh_approx(v.y), tanh_approx(v.z), tanh_approx(v.w));
-        }
-
-        void main() {
-          vec2 I = gl_FragCoord.xy;
-          vec4 O = vec4(0.0);
-          
-          float t = iTime;
-          float i = 0.0;
-          float z = 0.0;
-          float b = 0.0;
-          float l = 0.0;
-          
-          // Reduce iterations on mobile for better performance
-          int maxIter = ${isMobile ? '40' : '60'};
-          
-          for(int iter = 0; iter < ${isMobile ? '40' : '60'}; iter++) {
-            if(iter >= maxIter) break;
-            
-            i += 1.0;
-            
-            vec3 p = z * normalize(vec3(I + I, 0.0) - vec3(iResolution.x, iResolution.y, iResolution.y));
-            
-            float c = cos(0.1), s = sin(0.1);
-            vec2 rotated = vec2(0.8 * p.y - 0.6 * p.z, 0.6 * p.y + 0.8 * p.z);
-            p.yz = rotated * 0.1;
-            
-            p.z += 80.0;
-            
-            l = length(p) * 0.1;
-            
-            z += 1.0 + abs(l - 1.2);
-            
-            l += 1.0;
-            b = dot(cos(p/l - t), sin(p/l/0.4 + t).yzx);
-            
-            O += (1.0 + cos(tanh_approx(l - 6.0) * 6.0 - vec4(2.0, 3.0, 4.0, 0.0))) * b * b * b * b / z;
-          }
-          
-          gl_FragColor = tanh_approx_vec4(O / 2.0);
-        }
-      `;
-
-      // Shader compilation functions
-      function createShader(gl, type, source) {
-        const shader = gl.createShader(type);
-        gl.shaderSource(shader, source);
-        gl.compileShader(shader);
-        
-        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-          console.error('Shader compilation error:', gl.getShaderInfoLog(shader));
-          gl.deleteShader(shader);
-          return null;
-        }
-        
-        return shader;
-      }
-
-      function createProgram(gl, vertexShader, fragmentShader) {
-        const program = gl.createProgram();
-        gl.attachShader(program, vertexShader);
-        gl.attachShader(program, fragmentShader);
-        gl.linkProgram(program);
-        
-        if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-          console.error('Program linking error:', gl.getProgramInfoLog(program));
-          gl.deleteProgram(program);
-          return null;
-        }
-        
-        return program;
-      }
-
-      // Create shaders and program
-      const vertexShader = createShader(gl, gl.VERTEX_SHADER, vertexShaderSource);
-      const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSource);
-      shaderProgram = createProgram(gl, vertexShader, fragmentShader);
-
-      if (shaderProgram) {
-        // Get uniform locations
-        const timeLocation = gl.getUniformLocation(shaderProgram, 'iTime');
-        const resolutionLocation = gl.getUniformLocation(shaderProgram, 'iResolution');
-        const positionLocation = gl.getAttribLocation(shaderProgram, 'a_position');
-
-        // Create buffer for full-screen quad
-        const positionBuffer = gl.createBuffer();
-        gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
-          -1, -1,
-           1, -1,
-          -1,  1,
-           1,  1
-        ]), gl.STATIC_DRAW);
-
-        // Resize canvas function with mobile optimizations
-        function resizeCanvas() {
-          const pixelRatio = isMobile ? Math.min(window.devicePixelRatio, 2) : window.devicePixelRatio;
-          const width = window.innerWidth;
-          const height = window.innerHeight;
-          
-          canvas.width = width * pixelRatio;
-          canvas.height = height * pixelRatio;
-          canvas.style.width = width + 'px';
-          canvas.style.height = height + 'px';
-          
-          gl.viewport(0, 0, canvas.width, canvas.height);
-        }
-
-        resizeCanvas();
-        window.addEventListener('resize', resizeCanvas);
-
-        // Optimized animation loop
-        const startTime = Date.now();
-        let lastFrameTime = 0;
-        const targetFPS = isMobile ? 30 : 60;
-        const frameInterval = 1000 / targetFPS;
-
-        function animate(currentTime) {
-          if (currentTime - lastFrameTime >= frameInterval) {
-            const time = (Date.now() - startTime) / 1000;
-
-            gl.clearColor(0.0, 0.0, 0.0, 1.0);
-            gl.clear(gl.COLOR_BUFFER_BIT);
-
-            gl.useProgram(shaderProgram);
-            
-            gl.uniform1f(timeLocation, time);
-            gl.uniform2f(resolutionLocation, canvas.width, canvas.height);
-            
-            gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-            gl.enableVertexAttribArray(positionLocation);
-            gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
-            
-            gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-            
-            lastFrameTime = currentTime;
-          }
-          
-          animationFrameId = requestAnimationFrame(animate);
-        }
-        
-        animate(0);
-      }
-    }
-
-    // Cleanup function for when leaving the page
-    function cleanup() {
-      if (animationFrameId) {
-        cancelAnimationFrame(animationFrameId);
-      }
-      if (gl && shaderProgram) {
-        gl.deleteProgram(shaderProgram);
-      }
-    }
-
-    // Original loading functionality with mobile optimizations
+    // --- DOM refs ---
     const fill = document.getElementById('loaderFill');
     const fadeScreen = document.getElementById('fadeScreen');
     const splash = document.getElementById('splash');
     const loadingGifEl = document.getElementById('loadingGif');
 
-    // Set file paths based on device type
-    const splashImage = isMobile ? './splash-mobile.jpg' : './splash.jpg';
-    const loaderGifFile = isMobile ? './loading-mobile.gif' : './loading.gif';
-    
-    // Smooth progress tracking
-    let actualProgress = 0;
-    let smoothProgress = 0;
-    let progressAnimationId = null;
-    
-    // Debug mode - set to true to skip asset loading and test animation
-    const DEBUG_MODE = false;
-    
-    // Assets for preloading
-    let totalAssets = 0;
-    let loadedAssets = 0;
+    // --- Preload asset list (main page assets) ---
     const ASSETS = [];
-    
-    if (!DEBUG_MODE) {
-      // Add images based on device type
-      const folder = isMobile ? 'img/mobile/' : 'img/desktop/';
-      for (let i = 1; i <= 47; i++) {
-        ASSETS.push(folder + i + '.JPG');
-      }
-      
-      // Add video based on device type
-      ASSETS.push(isMobile ? 'dispvid4-mobile.mp4' : 'dispvid4.mp4');
-    } else {
-      // In debug mode, add fake assets for testing
-      ASSETS.push('fake1.jpg', 'fake2.jpg', 'fake3.jpg');
-    }
-    
-    totalAssets = ASSETS.length;
-    console.log(`Will preload ${totalAssets} assets for index2.html`);
+    for (let i = 1; i <= 47; i++) ASSETS.push(folder + i + '.JPG');
+    ASSETS.push(video);
 
-    // Optimized smooth animation
+    let totalAssets = ASSETS.length, loadedAssets = 0, actualProgress = 0, smoothProgress = 0, animationId = null;
+
+    // --- Animate progress ---
     function animateProgress() {
       const difference = actualProgress - smoothProgress;
       if (Math.abs(difference) > 0.1) {
         smoothProgress += difference * 0.08;
-        
         fill.style.width = smoothProgress + '%';
         splash.style.opacity = smoothProgress / 100;
-        
-        progressAnimationId = requestAnimationFrame(animateProgress);
+        animationId = requestAnimationFrame(animateProgress);
       } else {
         smoothProgress = actualProgress;
         fill.style.width = smoothProgress + '%';
         splash.style.opacity = smoothProgress / 100;
-        
         if (smoothProgress >= 100) {
-          console.log('Loading complete, transitioning...');
-          cleanup(); // Clean up shader resources
-          
           setTimeout(() => {
             fadeScreen.classList.add('fade-in');
-            setTimeout(() => {
-              window.location.href = 'index2.html';
-            }, 1400);
+            setTimeout(() => { window.location.href = 'index2.html'; }, 1400);
           }, 700);
         }
       }
     }
 
+    // --- Preload main assets (images & video) ---
+    function preloadMainAssets() {
+      ASSETS.forEach((url) => {
+        if (url.endsWith('.mp4')) {
+          const video = document.createElement('video');
+          video.preload = 'auto'; video.src = url;
+          video.oncanplaythrough = video.onerror = () => { loadedAssets++; updateProgress(); video.oncanplaythrough = video.onerror = null; };
+          setTimeout(() => { if (video.oncanplaythrough) { loadedAssets++; updateProgress(); video.oncanplaythrough = null; } }, 10000);
+        } else {
+          const img = new Image();
+          img.src = url;
+          img.onload = img.onerror = () => { loadedAssets++; updateProgress(); };
+        }
+      });
+    }
     function updateProgress() {
-      const progressPercent = Math.min(100, Math.round((loadedAssets / totalAssets) * 100));
-      actualProgress = progressPercent;
-      
-      console.log(`Loading progress: ${progressPercent}% (${loadedAssets}/${totalAssets})`);
-      
-      if (!progressAnimationId && actualProgress > 0) {
-        animateProgress();
-      }
+      const percent = Math.min(100, Math.round((loadedAssets / totalAssets) * 100));
+      actualProgress = percent;
+      if (!animationId && actualProgress > 0) animateProgress();
     }
 
-    // Priority loading with mobile considerations
+    // --- Priority: GIF first, then splash, then rest ---
     function loadPriorityAssets() {
-      console.log('Loading priority assets...');
-      
       loadingGifEl.onload = () => {
-        console.log('Loading GIF loaded');
         loadingGifEl.style.opacity = '1';
-        
-        splash.onload = () => {
-          console.log('Splash image loaded');
-          preloadMainAssets();
-        };
-        splash.onerror = () => {
-          console.log('Splash image failed, proceeding anyway');
-          preloadMainAssets();
-        };
+        splash.onload = () => { preloadMainAssets(); };
+        splash.onerror = () => { preloadMainAssets(); };
         splash.src = splashImage;
       };
-      
-      loadingGifEl.onerror = () => {
-        console.log('Loading GIF failed, proceeding anyway');
-        loadingGifEl.style.opacity = '1';
-        splash.src = splashImage;
-        preloadMainAssets();
-      };
-      
+      loadingGifEl.onerror = () => { loadingGifEl.style.opacity = '1'; splash.src = splashImage; preloadMainAssets(); };
       loadingGifEl.src = loaderGifFile;
     }
 
-    function preloadMainAssets() {
-      console.log('Starting asset preload');
-      
-      if (DEBUG_MODE) {
-        // Simple test mode - simulate loading
-        console.log('DEBUG MODE: Simulating asset loading');
-        let simulatedProgress = 0;
-        const simulateInterval = setInterval(() => {
-          simulatedProgress += 10;
-          loadedAssets = Math.floor((simulatedProgress / 100) * totalAssets);
-          actualProgress = simulatedProgress;
-          
-          console.log(`Simulated progress: ${simulatedProgress}%`);
-          
-          if (!progressAnimationId) {
-            animateProgress();
-          }
-          
-          if (simulatedProgress >= 100) {
-            clearInterval(simulateInterval);
-          }
-        }, 500);
-        return;
-      }
-      
-      // Add fallback timer in case assets fail to load
-      const fallbackTimer = setTimeout(() => {
-        console.log('Fallback timer triggered - forcing completion');
-        actualProgress = 100;
-        if (!progressAnimationId) {
-          animateProgress();
-        }
-      }, 30000); // 30 second fallback
-      
-      let completedAssets = 0;
-      
-      ASSETS.forEach((url, index) => {
-        console.log(`Loading asset ${index + 1}/${ASSETS.length}: ${url}`);
-        
-        if (url.endsWith('.mp4')) {
-          const video = document.createElement('video');
-          video.preload = 'metadata';
-          video.muted = true;
-          video.crossOrigin = 'anonymous';
-          video.src = url;
-          
-          const videoTimeout = setTimeout(() => {
-            console.log(`Video timeout for: ${url}`);
-            completedAssets++;
-            loadedAssets++;
-            updateProgress();
-            if (completedAssets === ASSETS.length) {
-              clearTimeout(fallbackTimer);
-            }
-          }, isMobile ? 8000 : 5000);
-          
-          const handleVideoLoad = () => {
-            console.log(`Video loaded: ${url}`);
-            clearTimeout(videoTimeout);
-            completedAssets++;
-            loadedAssets++;
-            updateProgress();
-            if (completedAssets === ASSETS.length) {
-              clearTimeout(fallbackTimer);
-            }
-          };
-          
-          video.oncanplaythrough = handleVideoLoad;
-          video.onloadedmetadata = handleVideoLoad;
-          video.onerror = (e) => {
-            console.log(`Video error for ${url}:`, e);
-            clearTimeout(videoTimeout);
-            completedAssets++;
-            loadedAssets++;
-            updateProgress();
-            if (completedAssets === ASSETS.length) {
-              clearTimeout(fallbackTimer);
-            }
-          };
-        } else {
-          const img = new Image();
-          img.crossOrigin = 'anonymous';
-          
-          const imageTimeout = setTimeout(() => {
-            console.log(`Image timeout for: ${url}`);
-            completedAssets++;
-            loadedAssets++;
-            updateProgress();
-            if (completedAssets === ASSETS.length) {
-              clearTimeout(fallbackTimer);
-            }
-          }, 5000);
-          
-          img.onload = () => {
-            console.log(`Image loaded: ${url}`);
-            clearTimeout(imageTimeout);
-            completedAssets++;
-            loadedAssets++;
-            updateProgress();
-            if (completedAssets === ASSETS.length) {
-              clearTimeout(fallbackTimer);
-            }
-          };
-          
-          img.onerror = (e) => {
-            console.log(`Image error for ${url}:`, e);
-            clearTimeout(imageTimeout);
-            completedAssets++;
-            loadedAssets++;
-            updateProgress();
-            if (completedAssets === ASSETS.length) {
-              clearTimeout(fallbackTimer);
-            }
-          };
-          
-          img.src = url;
-        }
-      });
-      
-      // If no assets to load, complete immediately
-      if (ASSETS.length === 0) {
-        console.log('No assets to load, completing immediately');
-        clearTimeout(fallbackTimer);
-        actualProgress = 100;
-        animateProgress();
-      }
+    document.addEventListener('DOMContentLoaded', () => { setTimeout(loadPriorityAssets, 100); });
+
+    // --- Shader overlay (optional, works on both) ---
+    const canvas = document.getElementById('shaderCanvas');
+    const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+    let shaderProgram, timeLocation, resolutionLocation, startTime = Date.now();
+    function initShader() {
+      if (!gl) return;
+      const vSrc = `attribute vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }`;
+      const fSrc = `precision highp float; uniform float iTime; uniform vec2 iResolution; void main() { vec2 fragCoord = gl_FragCoord.xy; vec4 fragColor = vec4(0.0); float t = iTime; float i = 0.0; float z = 0.0; float b; float l; for(int iter = 0; iter < 60; iter++) { i = float(iter); vec3 p = z * normalize(vec3(fragCoord + fragCoord, 0.0) - vec3(iResolution.xy, iResolution.y)); float c = 0.8; float s = -0.6; mat2 rotMat = mat2(c, s, -s, c); p.yz = 0.1 * (rotMat * p.yz); p.z += 80.0; l = length(p) * 0.1; z += 1.0 + abs(l - 1.2); l += 1.0; vec3 cosP = cos(p / l - t); vec3 sinP = sin(p / l / 0.4 + t); b = dot(cosP, sinP.yzx); vec4 colorWave = 1.0 + cos(tanh(l - 6.0) * 6.0 - vec4(2.0, 3.0, 4.0, 0.0)); fragColor += colorWave * b * b * b * b / z; } fragColor = tanh(fragColor / 2.0); gl_FragColor = fragColor; }`;
+      function compile(s, t) { const sh = gl.createShader(t); gl.shaderSource(sh, s); gl.compileShader(sh); if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) { gl.deleteShader(sh); return null; } return sh; }
+      const vs = compile(vSrc, gl.VERTEX_SHADER), fs = compile(fSrc, gl.FRAGMENT_SHADER); if (!vs || !fs) return;
+      shaderProgram = gl.createProgram(); gl.attachShader(shaderProgram, vs); gl.attachShader(shaderProgram, fs); gl.linkProgram(shaderProgram);
+      if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) return;
+      timeLocation = gl.getUniformLocation(shaderProgram, 'iTime'); resolutionLocation = gl.getUniformLocation(shaderProgram, 'iResolution');
+      const positions = new Float32Array([-1,-1, 1,-1, -1,1, 1,1]);
+      const positionBuffer = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer); gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
+      const positionLocation = gl.getAttribLocation(shaderProgram, 'position'); gl.enableVertexAttribArray(positionLocation); gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
+      render();
     }
+    function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; if (gl) gl.viewport(0, 0, canvas.width, canvas.height); }
+    function render() {
+      if (!shaderProgram) return;
+      const currentTime = (Date.now() - startTime) / 1000;
+      gl.clear(gl.COLOR_BUFFER_BIT); gl.useProgram(shaderProgram);
+      gl.uniform1f(timeLocation, currentTime); gl.uniform2f(resolutionLocation, canvas.width, canvas.height);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      requestAnimationFrame(render);
+    }
+    window.addEventListener('load', () => { resize(); if (gl) initShader(); setTimeout(() => { canvas.classList.add('active'); }, 1000); });
+    window.addEventListener('resize', resize);
 
-    // Enhanced page visibility handling
-    let isVisible = true;
-    document.addEventListener('visibilitychange', () => {
-      isVisible = !document.hidden;
-      if (!isVisible && animationFrameId) {
-        cancelAnimationFrame(animationFrameId);
-        animationFrameId = null;
-      } else if (isVisible && gl && shaderProgram && !animationFrameId) {
-        const startTime = Date.now();
-        let lastFrameTime = 0;
-        const targetFPS = isMobile ? 30 : 60;
-        const frameInterval = 1000 / targetFPS;
-
-        function restartAnimate(currentTime) {
-          if (currentTime - lastFrameTime >= frameInterval) {
-            const time = (Date.now() - startTime) / 1000;
-            // ... shader rendering code ...
-            lastFrameTime = currentTime;
-          }
-          if (isVisible) {
-            animationFrameId = requestAnimationFrame(restartAnimate);
-          }
-        }
-        restartAnimate(0);
-      }
+    // --- Orientation/device type change reload ---
+    window.addEventListener('resize', () => {
+      const newIsMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+        ('ontouchstart' in window) ||
+        (navigator.maxTouchPoints > 0) ||
+        (window.innerWidth <= 768);
+      if (newIsMobile !== isMobile) location.reload();
     });
-
-    // Start loading
-    document.addEventListener('DOMContentLoaded', () => {
-      setTimeout(loadPriorityAssets, 100);
-    });
-
-    window.addEventListener('load', () => {
-      if (loadingGifEl.style.opacity !== '1') {
-        loadPriorityAssets();
-      }
-    });
-
-    // Enhanced orientation change handling
-    let orientationTimeout;
-    window.addEventListener('orientationchange', () => {
-      clearTimeout(orientationTimeout);
-      orientationTimeout = setTimeout(() => {
-        location.reload();
-      }, 500);
-    });
-
-    // Prevent default touch behaviors
-    document.addEventListener('touchstart', (e) => {
-      if (e.touches.length > 1) {
-        e.preventDefault();
-      }
-    }, { passive: false });
-
-    document.addEventListener('touchmove', (e) => {
-      e.preventDefault();
-    }, { passive: false });
-
-    // Cleanup on page unload
-    window.addEventListener('beforeunload', cleanup);
-    window.addEventListener('pagehide', cleanup);
   </script>
-
 </body>
 </html>
