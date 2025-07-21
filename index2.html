@@ -15,7 +15,6 @@
       width: 100%;
       height: 100%;
     }
-    
     .canvas-container {
       position: absolute;
       top: 14px;
@@ -24,7 +23,6 @@
       bottom: 14px;
       background-color: transparent;
     }
-    
     canvas {
       width: 100%;
       height: 100%;
@@ -37,8 +35,6 @@
     canvas.fade-in {
       opacity: 1;
     }
-    
-    /* Text overlay styles */
     .title-overlay {
       position: fixed;
       top: 50%;
@@ -59,40 +55,12 @@
     .title-overlay.fade-out {
       opacity: 0;
     }
-    
-    /* Debug info for mobile - only shows if there's an error */
-    .error-overlay {
-      position: fixed;
-      top: 20px;
-      left: 20px;
-      right: 20px;
-      background: rgba(255, 0, 0, 0.9);
-      color: white;
-      padding: 20px;
-      border-radius: 10px;
-      font-size: 14px;
-      z-index: 30000;
-      display: none;
-    }
-    
-    /* The motion button is no longer used for device orientation */
-    #motionBtn {
-      display: none;
-    }
-    
-    /* Mobile responsive adjustments */
+    #motionBtn { display: none; }
     @media (max-width: 768px) {
-      .title-overlay {
-        font-size: 60px;
-        letter-spacing: 1px;
-      }
+      .title-overlay { font-size: 60px; letter-spacing: 1px; }
     }
-
     @media (max-width: 480px) {
-      .title-overlay {
-        font-size: 40px;
-        letter-spacing: 0px;
-      }
+      .title-overlay { font-size: 40px; letter-spacing: 0px; }
     }
   </style>
 </head>
@@ -101,65 +69,37 @@
     <canvas id="shaderCanvas"></canvas>
   </div>
   <div class="title-overlay" id="titleOverlay">lysets.slør</div>
-  <div class="error-overlay" id="errorOverlay"></div>
   <button id="motionBtn">Click for Device Motion</button>
-  
   <script>
-    // Error handler to catch and display issues
-    function showError(message) {
-      console.error(message);
-      const errorOverlay = document.getElementById('errorOverlay');
-      if (errorOverlay) {
-        errorOverlay.innerHTML = `<strong>Error:</strong><br>${message}<br><br>Check console for more details.`;
-        errorOverlay.style.display = 'block';
-      }
-    }
-
     class OrganicFluidTransition {
       constructor() {
         this.canvas = document.getElementById('shaderCanvas');
-        
-        // Try WebGL2 first, then WebGL1
-        this.gl = this.canvas.getContext('webgl2');
-        this.isWebGL2 = !!this.gl;
-        
+        // --- WebGL2 fallback to WebGL1 + graceful error ---
+        this.gl = this.canvas.getContext('webgl2') || this.canvas.getContext('webgl');
         if (!this.gl) {
-          this.gl = this.canvas.getContext('webgl') || this.canvas.getContext('experimental-webgl');
-          this.isWebGL2 = false;
-        }
-        
-        if (!this.gl) {
-          showError('WebGL not supported on this device');
+          document.body.innerHTML = '<div style="color:white;text-align:center;margin-top:40vh;font-size:1.5em;">Sorry, your device does not support WebGL.<br>Try using Chrome or Firefox on Android, or a recent iOS version.<br><br>Tip: If you see this on mobile, try another browser.</div>';
+          console.error('WebGL is not supported on this device.');
           return;
+        } else {
+          console.log('WebGL context acquired:', this.gl);
         }
-        
-        console.log(`Using ${this.isWebGL2 ? 'WebGL2' : 'WebGL1'}`);
-
-        // Enhanced mobile detection - MUST match the detection logic in loading page
-        this.isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || 
-                       ('ontouchstart' in window) || 
+        // --- Device detection ---
+        this.isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+                       ('ontouchstart' in window) ||
                        (navigator.maxTouchPoints > 0) ||
                        (window.innerWidth <= 768);
-
-        console.log(`Detected device type: ${this.isMobile ? 'mobile' : 'desktop'}`);
-        
-        // Build image paths dynamically based on device type (images 1.JPG to 47.JPG)
+        console.log(`index2.html - Detected device type: ${this.isMobile ? 'mobile' : 'desktop'}`);
+        // --- Image paths ---
         const folder = this.isMobile ? './img/mobile/' : './img/desktop/';
         this.imagePaths = [];
         for (let i = 1; i <= 47; i++) {
           this.imagePaths.push(folder + i + '.JPG');
         }
-        
         console.log(`Loading ${this.imagePaths.length} images from: ${folder}`);
-        
-        // Transition settings - very slow and deliberate
+        // --- Transition and geometry vars ---
         this.transitionMultiplier = 0.8;
-        
-        // Image dimensions - these should match your actual image dimensions
-        this.imageWidth = 1920;  // Actual width of your images
-        this.imageHeight = 1080; // Actual height of your images
-        
-        // Mouse positions (we'll use a smoothed value for transitions)
+        this.imageWidth = 1920;
+        this.imageHeight = 1080;
         this.mouseX = window.innerWidth / 2;
         this.mouseY = window.innerHeight / 2;
         this.smoothedMouseX = window.innerWidth / 2;
@@ -169,400 +109,194 @@
         this.moveThreshold = 0.1;
         this.hasUserInteracted = false;
         this.initialMouseSet = false;
-        
-        // Randomization system - improved to prevent clustering
         this.imageOrder = [];
         this.currentSegment = 0;
         this.segmentSize = Math.ceil(this.imagePaths.length / 8);
         this.segments = [];
         this.generateSegmentedOrder();
-        
-        // Fade-in system
         this.isLoaded = false;
         this.fadeInStarted = false;
-
-        // Fractal time is driven by mouse movement speed.
         this.fractalTime = 0;
         this.lastFrameTime = performance.now() / 1000;
-
-        // Choose shader version based on WebGL support
-        if (this.isWebGL2) {
-          this.vertexShaderSource = `#version 300 es
-            in vec4 a_position;
-            in vec2 a_texCoord;
-            out vec2 v_texCoord;
-            void main() {
-              gl_Position = a_position;
-              v_texCoord = a_texCoord;
-            }
-          `;
-
-          this.fragmentShaderSource = `#version 300 es
-            precision highp float;
-            #define PI 3.14159265359
-
-            // Uniforms
-            uniform sampler2D u_image0;
-            uniform sampler2D u_image1;
-            uniform sampler2D u_dispVideo;
-            uniform vec2 u_resolution;
-            uniform vec2 u_imageResolution;
-            uniform float u_time;
-            uniform float u_fractalIntensity;
-            uniform float u_dispAmount;
-            uniform float u_dispScale;
-            uniform float u_transition;
-            uniform float u_imageCount;
-            uniform float u_videoTime;
-
-            in vec2 v_texCoord;
-            out vec4 outColor;
-
-            // Function to calculate UV coordinates for 100% original image size
-            vec2 getImageUV(vec2 coord) {
-              vec2 imagePixelSize = u_imageResolution;
-              vec2 screenPixelSize = u_resolution;
-              
-              // Display at 100% original size for both mobile and desktop
-              vec2 displaySize = imagePixelSize;
-              
-              // Convert screen coordinates to pixel coordinates
-              vec2 screenPixel = coord * screenPixelSize;
-              
-              // Center the image on screen
-              vec2 imageOffset = (screenPixelSize - displaySize) * 0.5;
-              
-              // Calculate UV coordinates
-              vec2 imagePixel = screenPixel - imageOffset;
-              vec2 imageUV = imagePixel / displaySize;
-              
+        // --- Shader sources unchanged ---
+        this.vertexShaderSource = `#version 300 es
+          in vec4 a_position;
+          in vec2 a_texCoord;
+          out vec2 v_texCoord;
+          void main() {
+            gl_Position = a_position;
+            v_texCoord = a_texCoord;
+          }
+        `;
+        this.fragmentShaderSource = `#version 300 es
+          precision highp float;
+          #define PI 3.14159265359
+          uniform sampler2D u_image0;
+          uniform sampler2D u_image1;
+          uniform sampler2D u_dispVideo;
+          uniform vec2 u_resolution;
+          uniform vec2 u_imageResolution;
+          uniform float u_time;
+          uniform float u_fractalIntensity;
+          uniform float u_dispAmount;
+          uniform float u_dispScale;
+          uniform float u_transition;
+          uniform float u_imageCount;
+          uniform float u_videoTime;
+          in vec2 v_texCoord;
+          out vec4 outColor;
+          vec2 getImageUV(vec2 coord) {
+            vec2 imagePixelSize = u_imageResolution;
+            vec2 screenPixelSize = u_resolution;
+            vec2 displaySize = imagePixelSize;
+            vec2 screenPixel = coord * screenPixelSize;
+            vec2 imageOffset = (screenPixelSize - displaySize) * 0.5;
+            vec2 imagePixel = screenPixel - imageOffset;
+            vec2 imageUV = imagePixel / displaySize;
+            return imageUV;
+          }
+          vec2 getMirroredUV(vec2 coord) {
+            vec2 imagePixelSize = u_imageResolution;
+            vec2 screenPixelSize = u_resolution;
+            vec2 displaySize = imagePixelSize;
+            vec2 screenPixel = coord * screenPixelSize;
+            vec2 imageOffset = (screenPixelSize - displaySize) * 0.5;
+            vec2 imagePixel = screenPixel - imageOffset;
+            vec2 imageUV = imagePixel / displaySize;
+            if (imageUV.x >= 0.0 && imageUV.x <= 1.0 && imageUV.y >= 0.0 && imageUV.y <= 1.0) {
               return imageUV;
             }
-
-            vec4 baseTransition() {
-              float transitionVal = u_transition * u_imageCount;
-              float blendFactor = fract(transitionVal);
-              
-              vec2 imageUV = getImageUV(v_texCoord);
-              
-              // Only apply displacement if we're within image bounds
-              if (imageUV.x < 0.0 || imageUV.x > 1.0 || imageUV.y < 0.0 || imageUV.y > 1.0) {
-                return vec4(0.0, 0.0, 0.0, 1.0);
-              }
-              
-              // Displacement effect
-              vec2 timeOffset = vec2(0.015 * sin(u_videoTime * 0.25), 0.015 * cos(u_videoTime * 0.25));
-              vec2 dispCoord = imageUV * u_dispScale + timeOffset;
-              vec2 videoDisp = texture(u_dispVideo, dispCoord).rg;
-              float watermarkMask = 1.0;
-              if (dispCoord.x > 0.7 && dispCoord.y < 0.3) {
-                float xFade = smoothstep(0.7, 0.9, dispCoord.x);
-                float yFade = smoothstep(0.3, 0.1, dispCoord.y);
-                watermarkMask = 1.0 - (xFade * yFade);
-                videoDisp = mix(videoDisp, vec2(0.5, 0.5), 1.0 - watermarkMask);
-              }
-              float dynamicDisp = u_dispAmount * (1.0 + 0.4 * sin(u_videoTime * 0.15));
-              vec2 displacement = (videoDisp - 0.5) * dynamicDisp * 1.5 * watermarkMask;
-
-              vec2 displacedUV0 = clamp(imageUV + displacement * (1.0 - blendFactor), 0.0, 1.0);
-              vec2 displacedUV1 = clamp(imageUV - displacement * blendFactor, 0.0, 1.0);
-
-              vec4 color0 = texture(u_image0, displacedUV0);
-              vec4 color1 = texture(u_image1, displacedUV1);
-              return mix(color0, color1, blendFactor);
+            vec2 mirroredUV = imageUV;
+            if (imageUV.x < 0.0) {
+              mirroredUV.x = -imageUV.x;
+            } else if (imageUV.x > 1.0) {
+              mirroredUV.x = 2.0 - imageUV.x;
             }
-
-            vec4 clearTransition() {
-              float transitionVal = u_transition * u_imageCount;
-              float blendFactor = fract(transitionVal);
-              
-              vec2 imageUV = getImageUV(v_texCoord);
-              
-              if (imageUV.x < 0.0 || imageUV.x > 1.0 || imageUV.y < 0.0 || imageUV.y > 1.0) {
-                return vec4(0.0, 0.0, 0.0, 1.0);
-              }
-              
-              return mix(texture(u_image0, imageUV), texture(u_image1, imageUV), blendFactor);
+            if (imageUV.y < 0.0) {
+              mirroredUV.y = -imageUV.y;
+            } else if (imageUV.y > 1.0) {
+              mirroredUV.y = 2.0 - imageUV.y;
             }
-
-            vec3 hsv(float h, float s, float v) {
-              vec3 k = vec3(1.0, 2.0/3.0, 1.0/3.0);
-              vec3 p = abs(fract(vec3(h) + k) * 6.0 - 3.0);
-              return v * mix(vec3(1.0), clamp(p - 1.0, 0.0, 1.0), s);
+            mirroredUV = clamp(mirroredUV, 0.0, 1.0);
+            return mirroredUV;
+          }
+          vec4 baseTransition() {
+            float transitionVal = u_transition * u_imageCount;
+            float blendFactor = fract(transitionVal);
+            vec2 imageUV = getImageUV(v_texCoord);
+            if (imageUV.x < 0.0 || imageUV.x > 1.0 || imageUV.y < 0.0 || imageUV.y > 1.0) {
+              return vec4(0.0, 0.0, 0.0, 1.0);
             }
-
-            vec3 formula(in vec2 _p, in vec2 c) {
-              vec2 p = _p;
-              const float n = 2.0;
-              const int iters = 12;
-              float timeVal = u_time * 0.1;
-              vec3 col = vec3(0.0);
-              float t = 1.0;
-              float dpp = dot(p, p);
-              float lp = sqrt(dpp);
-              float r = smoothstep(0.0, 0.2, lp);
-              for (int i = 0; i < iters; i++) {
-                p = abs(mod(p/dpp + c, n) - n/2.0);
-                dpp = dot(p, p);
-                lp = sqrt(dpp);
-                t *= smoothstep(0.0, 0.01, abs(n/2.0 - p.x)*lp)
-                   * smoothstep(0.0, 0.01, abs(n/2.0 - p.y)*lp)
-                   * smoothstep(0.0, 0.01, abs(p.x)*2.0)
-                   * smoothstep(0.0, 0.01, abs(p.y)*2.0);
-                r *= smoothstep(0.0, 0.2, lp);
-                col += hsv(1.0 - max(p.x, p.y) + t*2.0 + timeVal, 2.0 - lp + t, r);
-              }
-              return (-cos(col / 4.0)*0.5 + 0.5) * t;
+            vec2 timeOffset = vec2(0.015 * sin(u_videoTime * 0.25), 0.015 * cos(u_videoTime * 0.25));
+            vec2 dispCoord = imageUV * u_dispScale + timeOffset;
+            vec2 videoDisp = texture(u_dispVideo, dispCoord).rg;
+            float watermarkMask = 1.0;
+            if (dispCoord.x > 0.7 && dispCoord.y < 0.3) {
+              float xFade = smoothstep(0.7, 0.9, dispCoord.x);
+              float yFade = smoothstep(0.3, 0.1, dispCoord.y);
+              watermarkMask = 1.0 - (xFade * yFade);
+              videoDisp = mix(videoDisp, vec2(0.5, 0.5), 1.0 - watermarkMask);
             }
-
-            vec3 newShaderEffect(vec2 fragCoord) {
-              vec2 p = -1.0 + 2.0 * fragCoord / u_resolution;
-              p.x *= u_resolution.x / u_resolution.y;
-              p *= 2.0;
-              const vec2 e = vec2(0.06545465634, -0.05346356485);
-              vec2 c = u_time * e;
-              vec3 col = vec3(0.0);
-              const float blursamples = 4.0;
-              float sbs = sqrt(blursamples);
-              float mbluramount = 1.0 / u_resolution.x / length(e) / blursamples * 2.0;
-              float aabluramount = 1.0 / u_resolution.x / sbs * 4.0;
-              for (float b = 0.0; b < blursamples; b++) {
-                col += formula(
-                  p + vec2(mod(b, sbs)*aabluramount, floor(b/sbs)*aabluramount),
-                  c + e * mbluramount * b
-                );
-              }
-              col /= blursamples;
-              return col;
+            float dynamicDisp = u_dispAmount * (1.0 + 0.4 * sin(u_videoTime * 0.15));
+            vec2 displacement = (videoDisp - 0.5) * dynamicDisp * 1.5 * watermarkMask;
+            vec2 displacedUV0 = clamp(imageUV + displacement * (1.0 - blendFactor), 0.0, 1.0);
+            vec2 displacedUV1 = clamp(imageUV - displacement * blendFactor, 0.0, 1.0);
+            vec4 color0 = texture(u_image0, displacedUV0);
+            vec4 color1 = texture(u_image1, displacedUV1);
+            return mix(color0, color1, blendFactor);
+          }
+          vec4 clearTransition() {
+            float transitionVal = u_transition * u_imageCount;
+            float blendFactor = fract(transitionVal);
+            vec2 imageUV = getImageUV(v_texCoord);
+            if (imageUV.x < 0.0 || imageUV.x > 1.0 || imageUV.y < 0.0 || imageUV.y > 1.0) {
+              return vec4(0.0, 0.0, 0.0, 1.0);
             }
-
-            vec3 colorDodgeBlend(vec3 base, vec3 blend) {
-              return clamp(base / (1.0 - blend + 0.001), 0.0, 1.0);
+            return mix(texture(u_image0, imageUV), texture(u_image1, imageUV), blendFactor);
+          }
+          vec3 hsv(float h, float s, float v) {
+            vec3 k = vec3(1.0, 2.0/3.0, 1.0/3.0);
+            vec3 p = abs(fract(vec3(h) + k) * 6.0 - 3.0);
+            return v * mix(vec3(1.0), clamp(p - 1.0, 0.0, 1.0), s);
+          }
+          vec3 formula(in vec2 _p, in vec2 c) {
+            vec2 p = _p;
+            const float n = 2.0;
+            const int iters = 12;
+            float timeVal = u_time * 0.1;
+            vec3 col = vec3(0.0);
+            float t = 1.0;
+            float dpp = dot(p, p);
+            float lp = sqrt(dpp);
+            float r = smoothstep(0.0, 0.2, lp);
+            for (int i = 0; i < iters; i++) {
+              p = abs(mod(p/dpp + c, n) - n/2.0);
+              dpp = dot(p, p);
+              lp = sqrt(dpp);
+              t *= smoothstep(0.0, 0.01, abs(n/2.0 - p.x)*lp)
+                 * smoothstep(0.0, 0.01, abs(n/2.0 - p.y)*lp)
+                 * smoothstep(0.0, 0.01, abs(p.x)*2.0)
+                 * smoothstep(0.0, 0.01, abs(p.y)*2.0);
+              r *= smoothstep(0.0, 0.2, lp);
+              col += hsv(1.0 - max(p.x, p.y) + t*2.0 + timeVal, 2.0 - lp + t, r);
             }
-
-            void main() {
-              float transitionVal = u_transition * u_imageCount;
-              float blendFactor = fract(transitionVal);
-
-              vec4 clearColor = clearTransition();
-              vec4 distortedColor = baseTransition();
-
-              float clearPulse = 1.0 - abs(blendFactor - 0.5) * 4.0;
-              clearPulse = clamp(clearPulse, 0.0, 1.0);
-
-              vec4 finalBase = mix(distortedColor, clearColor, clearPulse);
-
-              vec3 fractalEffect = newShaderEffect(gl_FragCoord.xy) * u_fractalIntensity * (1.0 - clearPulse);
-
-              vec3 finalColor = colorDodgeBlend(finalBase.rgb, fractalEffect);
-              outColor = vec4(finalColor, 1.0);
+            return (-cos(col / 4.0)*0.5 + 0.5) * t;
+          }
+          vec3 newShaderEffect(vec2 fragCoord) {
+            vec2 p = -1.0 + 2.0 * fragCoord / u_resolution;
+            p.x *= u_resolution.x / u_resolution.y;
+            p *= 2.0;
+            const vec2 e = vec2(0.06545465634, -0.05346356485);
+            vec2 c = u_time * e;
+            vec3 col = vec3(0.0);
+            const float blursamples = 4.0;
+            float sbs = sqrt(blursamples);
+            float mbluramount = 1.0 / u_resolution.x / length(e) / blursamples * 2.0;
+            float aabluramount = 1.0 / u_resolution.x / sbs * 4.0;
+            for (float b = 0.0; b < blursamples; b++) {
+              col += formula(
+                p + vec2(mod(b, sbs)*aabluramount, floor(b/sbs)*aabluramount),
+                c + e * mbluramount * b
+              );
             }
-          `;
-        } else {
-          // WebGL1 fallback shaders
-          this.vertexShaderSource = `
-            attribute vec4 a_position;
-            attribute vec2 a_texCoord;
-            varying vec2 v_texCoord;
-            void main() {
-              gl_Position = a_position;
-              v_texCoord = a_texCoord;
-            }
-          `;
-
-          this.fragmentShaderSource = `
-            precision mediump float;
-            #define PI 3.14159265359
-
-            // Uniforms
-            uniform sampler2D u_image0;
-            uniform sampler2D u_image1;
-            uniform sampler2D u_dispVideo;
-            uniform vec2 u_resolution;
-            uniform vec2 u_imageResolution;
-            uniform float u_time;
-            uniform float u_fractalIntensity;
-            uniform float u_dispAmount;
-            uniform float u_dispScale;
-            uniform float u_transition;
-            uniform float u_imageCount;
-            uniform float u_videoTime;
-
-            varying vec2 v_texCoord;
-
-            // Function to calculate UV coordinates for 100% original image size
-            vec2 getImageUV(vec2 coord) {
-              vec2 imagePixelSize = u_imageResolution;
-              vec2 screenPixelSize = u_resolution;
-              
-              // Display at 100% original size for both mobile and desktop
-              vec2 displaySize = imagePixelSize;
-              
-              // Convert screen coordinates to pixel coordinates
-              vec2 screenPixel = coord * screenPixelSize;
-              
-              // Center the image on screen
-              vec2 imageOffset = (screenPixelSize - displaySize) * 0.5;
-              
-              // Calculate UV coordinates
-              vec2 imagePixel = screenPixel - imageOffset;
-              vec2 imageUV = imagePixel / displaySize;
-              
-              return imageUV;
-            }
-
-            vec4 baseTransition() {
-              float transitionVal = u_transition * u_imageCount;
-              float blendFactor = fract(transitionVal);
-              
-              vec2 imageUV = getImageUV(v_texCoord);
-              
-              // Only apply displacement if we're within image bounds
-              if (imageUV.x < 0.0 || imageUV.x > 1.0 || imageUV.y < 0.0 || imageUV.y > 1.0) {
-                return vec4(0.0, 0.0, 0.0, 1.0);
-              }
-              
-              // Displacement effect
-              vec2 timeOffset = vec2(0.015 * sin(u_videoTime * 0.25), 0.015 * cos(u_videoTime * 0.25));
-              vec2 dispCoord = imageUV * u_dispScale + timeOffset;
-              vec2 videoDisp = texture2D(u_dispVideo, dispCoord).rg;
-              float watermarkMask = 1.0;
-              if (dispCoord.x > 0.7 && dispCoord.y < 0.3) {
-                float xFade = smoothstep(0.7, 0.9, dispCoord.x);
-                float yFade = smoothstep(0.3, 0.1, dispCoord.y);
-                watermarkMask = 1.0 - (xFade * yFade);
-                videoDisp = mix(videoDisp, vec2(0.5, 0.5), 1.0 - watermarkMask);
-              }
-              float dynamicDisp = u_dispAmount * (1.0 + 0.4 * sin(u_videoTime * 0.15));
-              vec2 displacement = (videoDisp - 0.5) * dynamicDisp * 1.5 * watermarkMask;
-
-              vec2 displacedUV0 = clamp(imageUV + displacement * (1.0 - blendFactor), 0.0, 1.0);
-              vec2 displacedUV1 = clamp(imageUV - displacement * blendFactor, 0.0, 1.0);
-
-              vec4 color0 = texture2D(u_image0, displacedUV0);
-              vec4 color1 = texture2D(u_image1, displacedUV1);
-              return mix(color0, color1, blendFactor);
-            }
-
-            vec4 clearTransition() {
-              float transitionVal = u_transition * u_imageCount;
-              float blendFactor = fract(transitionVal);
-              
-              vec2 imageUV = getImageUV(v_texCoord);
-              
-              if (imageUV.x < 0.0 || imageUV.x > 1.0 || imageUV.y < 0.0 || imageUV.y > 1.0) {
-                return vec4(0.0, 0.0, 0.0, 1.0);
-              }
-              
-              return mix(texture2D(u_image0, imageUV), texture2D(u_image1, imageUV), blendFactor);
-            }
-
-            vec3 hsv(float h, float s, float v) {
-              vec3 k = vec3(1.0, 2.0/3.0, 1.0/3.0);
-              vec3 p = abs(fract(vec3(h) + k) * 6.0 - 3.0);
-              return v * mix(vec3(1.0), clamp(p - 1.0, 0.0, 1.0), s);
-            }
-
-            vec3 formula(in vec2 _p, in vec2 c) {
-              vec2 p = _p;
-              const float n = 2.0;
-              const int iters = 12;
-              float timeVal = u_time * 0.1;
-              vec3 col = vec3(0.0);
-              float t = 1.0;
-              float dpp = dot(p, p);
-              float lp = sqrt(dpp);
-              float r = smoothstep(0.0, 0.2, lp);
-              for (int i = 0; i < iters; i++) {
-                p = abs(mod(p/dpp + c, n) - n/2.0);
-                dpp = dot(p, p);
-                lp = sqrt(dpp);
-                t *= smoothstep(0.0, 0.01, abs(n/2.0 - p.x)*lp)
-                   * smoothstep(0.0, 0.01, abs(n/2.0 - p.y)*lp)
-                   * smoothstep(0.0, 0.01, abs(p.x)*2.0)
-                   * smoothstep(0.0, 0.01, abs(p.y)*2.0);
-                r *= smoothstep(0.0, 0.2, lp);
-                col += hsv(1.0 - max(p.x, p.y) + t*2.0 + timeVal, 2.0 - lp + t, r);
-              }
-              return (-cos(col / 4.0)*0.5 + 0.5) * t;
-            }
-
-            vec3 newShaderEffect(vec2 fragCoord) {
-              vec2 p = -1.0 + 2.0 * fragCoord / u_resolution;
-              p.x *= u_resolution.x / u_resolution.y;
-              p *= 2.0;
-              const vec2 e = vec2(0.06545465634, -0.05346356485);
-              vec2 c = u_time * e;
-              vec3 col = vec3(0.0);
-              const float blursamples = 4.0;
-              float sbs = sqrt(blursamples);
-              float mbluramount = 1.0 / u_resolution.x / length(e) / blursamples * 2.0;
-              float aabluramount = 1.0 / u_resolution.x / sbs * 4.0;
-              for (float b = 0.0; b < blursamples; b++) {
-                col += formula(
-                  p + vec2(mod(b, sbs)*aabluramount, floor(b/sbs)*aabluramount),
-                  c + e * mbluramount * b
-                );
-              }
-              col /= blursamples;
-              return col;
-            }
-
-            vec3 colorDodgeBlend(vec3 base, vec3 blend) {
-              return clamp(base / (1.0 - blend + 0.001), 0.0, 1.0);
-            }
-
-            void main() {
-              float transitionVal = u_transition * u_imageCount;
-              float blendFactor = fract(transitionVal);
-
-              vec4 clearColor = clearTransition();
-              vec4 distortedColor = baseTransition();
-
-              float clearPulse = 1.0 - abs(blendFactor - 0.5) * 4.0;
-              clearPulse = clamp(clearPulse, 0.0, 1.0);
-
-              vec4 finalBase = mix(distortedColor, clearColor, clearPulse);
-
-              vec3 fractalEffect = newShaderEffect(gl_FragCoord.xy) * u_fractalIntensity * (1.0 - clearPulse);
-
-              vec3 finalColor = colorDodgeBlend(finalBase.rgb, fractalEffect);
-              gl_FragColor = vec4(finalColor, 1.0);
-            }
-          `;
-        }
-
-        try {
-          this.program = this.createShaderProgram();
-          this.setupBuffers();
-          this.loadTextures();
-          this.loadDispTexture();
-          this.setupEventListeners();
-          this.render();
-        } catch (error) {
-          showError(`Initialization failed: ${error.message}`);
-        }
+            col /= blursamples;
+            return col;
+          }
+          vec3 colorDodgeBlend(vec3 base, vec3 blend) {
+            return clamp(base / (1.0 - blend + 0.001), 0.0, 1.0);
+          }
+          void main() {
+            float transitionVal = u_transition * u_imageCount;
+            float blendFactor = fract(transitionVal);
+            vec4 clearColor = clearTransition();
+            vec4 distortedColor = baseTransition();
+            float clearPulse = 1.0 - abs(blendFactor - 0.5) * 4.0;
+            clearPulse = clamp(clearPulse, 0.0, 1.0);
+            vec4 finalBase = mix(distortedColor, clearColor, clearPulse);
+            vec3 fractalEffect = newShaderEffect(gl_FragCoord.xy) * u_fractalIntensity * (1.0 - clearPulse);
+            vec3 finalColor = colorDodgeBlend(finalBase.rgb, fractalEffect);
+            outColor = vec4(finalColor, 1.0);
+          }
+        `;
+        // --- Shader program with full error logging and stop on fail ---
+        this.program = this.createShaderProgram();
+        if (!this.program) return;
+        this.setupBuffers();
+        this.loadTextures();
+        this.loadDispTexture();
+        this.setupEventListeners();
+        this.render();
       }
-
-      // Generate segmented randomized order to prevent clustering
       generateSegmentedOrder() {
         this.segments = [];
-        for (let i = 0; i < 8; i++) {
-          this.segments[i] = [];
-        }
-        
+        for (let i = 0; i < 8; i++) this.segments[i] = [];
         for (let i = 0; i < this.imagePaths.length; i++) {
           const segmentIndex = i % 8;
           this.segments[segmentIndex].push(i);
         }
-        
-        this.segments.forEach(segment => {
-          this.shuffleArray(segment);
-        });
-        
+        this.segments.forEach(segment => this.shuffleArray(segment));
         this.imageOrder = [];
         const maxSegmentLength = Math.max(...this.segments.map(seg => seg.length));
-        
         for (let pos = 0; pos < maxSegmentLength; pos++) {
           for (let seg = 0; seg < 8; seg++) {
             if (this.segments[seg][pos] !== undefined) {
@@ -570,74 +304,75 @@
             }
           }
         }
-        
         console.log('Generated segmented random order for better distribution');
+        console.log('Order preview:', this.imageOrder.slice(0, 16));
       }
-
       getRandomizedIndex(transitionValue) {
         const normalizedTransition = Math.max(0, Math.min(0.999, transitionValue));
         const totalImages = this.imageOrder.length;
         const index = Math.floor(normalizedTransition * totalImages);
         return this.imageOrder[index];
       }
-
       shuffleArray(array) {
         for (let i = array.length - 1; i > 0; i--) {
           const j = Math.floor(Math.random() * (i + 1));
           [array[i], array[j]] = [array[j], array[i]];
         }
       }
-
       createShaderProgram() {
         const gl = this.gl;
+        // Decide on shader version based on context (WebGL1/WebGL2)
+        let vSource = this.vertexShaderSource;
+        let fSource = this.fragmentShaderSource;
+        // If using WebGL1, strip #version and change out/in to varying/attribute
+        if (gl instanceof WebGLRenderingContext) {
+          // Convert GLSL ES 3.0 to GLSL ES 1.0 (very minimal, may need more conversion for complex shaders)
+          vSource = vSource.replace(/#version 300 es[\s\S]*?in /g, 'attribute ').replace(/out /g, 'varying ');
+          fSource = fSource.replace(/#version 300 es[\s\S]*?in /g, 'varying ').replace(/outColor/g, 'gl_FragColor');
+        }
+        // Compile
         const vertexShader = gl.createShader(gl.VERTEX_SHADER);
-        gl.shaderSource(vertexShader, this.vertexShaderSource);
+        gl.shaderSource(vertexShader, vSource);
         gl.compileShader(vertexShader);
         if (!gl.getShaderParameter(vertexShader, gl.COMPILE_STATUS)) {
-          throw new Error('Vertex shader error: ' + gl.getShaderInfoLog(vertexShader));
+          console.error('Vertex shader error:', gl.getShaderInfoLog(vertexShader));
+          return null;
         }
         const fragmentShader = gl.createShader(gl.FRAGMENT_SHADER);
-        gl.shaderSource(fragmentShader, this.fragmentShaderSource);
+        gl.shaderSource(fragmentShader, fSource);
         gl.compileShader(fragmentShader);
         if (!gl.getShaderParameter(fragmentShader, gl.COMPILE_STATUS)) {
-          throw new Error('Fragment shader error: ' + gl.getShaderInfoLog(fragmentShader));
+          console.error('Fragment shader error:', gl.getShaderInfoLog(fragmentShader));
+          return null;
         }
         const program = gl.createProgram();
         gl.attachShader(program, vertexShader);
         gl.attachShader(program, fragmentShader);
         gl.linkProgram(program);
         if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-          throw new Error('Program linking error: ' + gl.getProgramInfoLog(program));
+          console.error('Program linking error:', gl.getProgramInfoLog(program));
+          return null;
         }
         return program;
       }
-
       setupBuffers() {
         const gl = this.gl;
         const positionBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
         const positions = [
-          -1.0, -1.0,
-           1.0, -1.0,
-          -1.0,  1.0,
-          -1.0,  1.0,
-           1.0, -1.0,
-           1.0,  1.0
+          -1.0, -1.0, 1.0, -1.0,
+          -1.0,  1.0, -1.0,  1.0,
+          1.0, -1.0, 1.0,  1.0
         ];
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
-
         const texCoordBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
         const texCoords = [
-          0.0, 0.0,
-          1.0, 0.0,
-          0.0, 1.0,
-          0.0, 1.0,
-          1.0, 0.0,
-          1.0, 1.0
+          0.0, 0.0, 1.0, 0.0,
+          0.0, 1.0, 0.0, 1.0,
+          1.0, 0.0, 1.0, 1.0
         ];
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(texCoords), gl.STATIC_DRAW);
-
         gl.useProgram(this.program);
         const posLoc = gl.getAttribLocation(this.program, 'a_position');
         const texLoc = gl.getAttribLocation(this.program, 'a_texCoord');
@@ -648,30 +383,22 @@
         gl.enableVertexAttribArray(texLoc);
         gl.vertexAttribPointer(texLoc, 2, gl.FLOAT, false, 0, 0);
       }
-
       loadTextures() {
         const gl = this.gl;
         this.textures = [];
         this.images = [];
-        
         this.imagePaths.forEach(path => {
           const img = new Image();
-          img.crossOrigin = 'anonymous'; // Add CORS support
           img.src = path;
+          img.onload = () => { console.log("Loaded image:", path); };
+          img.onerror = () => { console.error("Failed to load image:", path); };
           this.images.push(img);
         });
-        
-        Promise.all(this.images.map(img => new Promise((resolve, reject) => {
-          if (img.complete && img.naturalWidth > 0) {
-            resolve();
-          } else {
-            img.onload = resolve;
-            img.onerror = () => {
-              console.warn(`Failed to load image: ${img.src}`);
-              reject(new Error(`Failed to load: ${img.src}`));
-            };
-            // Add timeout for mobile networks
-            setTimeout(() => reject(new Error(`Timeout loading: ${img.src}`)), 10000);
+        Promise.all(this.images.map(img => new Promise(resolve => {
+          if (img.complete) resolve();
+          else {
+            img.onload = () => { console.log("Loaded image (Promise):", img.src); resolve(); };
+            img.onerror = () => { console.error("Failed to load image (Promise):", img.src); resolve(); };
           }
         }))).then(() => {
           this.images.forEach(image => {
@@ -685,16 +412,11 @@
             gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
             this.textures.push(texture);
           });
-          
           this.resizeCanvas();
           this.isLoaded = true;
           console.log(`Successfully loaded ${this.textures.length} textures`);
-        }).catch(err => {
-          showError(`Image loading failed: ${err.message}`);
-          console.error('Error loading base images:', err);
-        });
+        }).catch(err => console.error('Error loading base images:', err));
       }
-
       loadDispTexture() {
         const gl = this.gl;
         this.dispVideoTexture = gl.createTexture();
@@ -706,7 +428,6 @@
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 480, 270, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
       }
-
       updateVideoTexture() {
         if (!this.video) {
           this.video = document.createElement('video');
@@ -716,25 +437,14 @@
           this.video.playsInline = true;
           this.video.preload = "auto";
           this.video.crossOrigin = "anonymous";
-          console.log(`Using displacement video: ${this.video.src}`);
-          
           this.video.addEventListener('loadeddata', () => {
-            console.log('Video loaded successfully');
+            console.log('Video loaded successfully:', this.video.src);
           });
-          
           this.video.addEventListener('error', (e) => {
-            console.error('Video loading error:', e);
-            // Don't show error for video as it's not critical
+            console.error('Video loading error:', this.video.src, e);
           });
-          
-          // Better mobile video handling
-          this.video.addEventListener('canplay', () => {
-            console.log('Video can play');
-          });
-          
           this.video.load();
         }
-        
         if (this.video.readyState >= this.video.HAVE_CURRENT_DATA) {
           const gl = this.gl;
           gl.bindTexture(gl.TEXTURE_2D, this.dispVideoTexture);
@@ -746,211 +456,172 @@
           }
         }
       }
-
       setupEventListeners() {
         // Mouse events for desktop
         window.addEventListener('mousemove', e => {
-          this.handlePointerMove(e.clientX, e.clientY);
+          if (!this.initialMouseSet) {
+            this.mouseX = e.clientX;
+            this.mouseY = e.clientY;
+            this.smoothedMouseX = e.clientX;
+            this.lastMouseX = e.clientX;
+            this.lastMouseY = e.clientY;
+            this.initialMouseSet = true;
+            this.hasUserInteracted = true;
+            this.lastMouseMoveTime = performance.now() / 1000;
+            console.log('Initial mouse position set');
+            return;
+          }
+          this.mouseX = e.clientX;
+          this.mouseY = e.clientY;
+          this.lastMouseMoveTime = performance.now() / 1000;
+          this.hasUserInteracted = true;
         });
-
-        // Touch events for mobile - improved handling
+        // Touch events for mobile
         window.addEventListener('touchmove', e => {
           e.preventDefault();
           if (e.touches.length > 0) {
-            this.handlePointerMove(e.touches[0].clientX, e.touches[0].clientY);
+            if (!this.initialMouseSet) {
+              this.mouseX = e.touches[0].clientX;
+              this.mouseY = e.touches[0].clientY;
+              this.smoothedMouseX = e.touches[0].clientX;
+              this.lastMouseX = e.touches[0].clientX;
+              this.lastMouseY = e.touches[0].clientY;
+              this.initialMouseSet = true;
+              this.hasUserInteracted = true;
+              this.lastMouseMoveTime = performance.now() / 1000;
+              console.log('Initial touch position set');
+              return;
+            }
+            this.mouseX = e.touches[0].clientX;
+            this.mouseY = e.touches[0].clientY;
+            this.lastMouseMoveTime = performance.now() / 1000;
+            this.hasUserInteracted = true;
           }
         }, { passive: false });
-
         window.addEventListener('touchstart', e => {
           if (e.touches.length > 0) {
-            this.handlePointerMove(e.touches[0].clientX, e.touches[0].clientY);
-            
+            this.mouseX = e.touches[0].clientX;
+            this.mouseY = e.touches[0].clientY;
+            this.lastMouseMoveTime = performance.now() / 1000;
+            this.hasUserInteracted = true;
             // Try to start video on first touch (mobile requirement)
             if (this.video && this.video.paused) {
-              this.video.play().catch(err => console.log("Video autoplay not allowed yet:", err));
-            }
-          }
-        }, { passive: true });
-
-        // Handle page visibility changes (important for mobile)
-        document.addEventListener('visibilitychange', () => {
-          if (document.hidden) {
-            // Page is hidden - pause video to save battery
-            if (this.video && !this.video.paused) {
-              this.video.pause();
-            }
-          } else {
-            // Page is visible again - resume if user was interacting
-            if (this.hasUserInteracted && this.video && this.video.paused) {
-              this.video.play().catch(err => console.log("Resume play failed:", err));
+              this.video.play().then(() => {
+                console.log('Video play triggered on touchstart (mobile).');
+              }).catch(err => {
+                console.log("Video autoplay not allowed yet:", err);
+              });
             }
           }
         });
-
         window.addEventListener('resize', () => {
           this.resizeCanvas();
         });
       }
-      
-      handlePointerMove(x, y) {
-        if (!this.initialMouseSet) {
-          this.mouseX = x;
-          this.mouseY = y;
-          this.smoothedMouseX = x;
-          this.lastMouseX = x;
-          this.lastMouseY = y;
-          this.initialMouseSet = true;
-          this.hasUserInteracted = true;
-          this.lastMouseMoveTime = performance.now() / 1000;
-          console.log('Initial pointer position set');
-          return;
-        }
-        
-        this.mouseX = x;
-        this.mouseY = y;
-        this.lastMouseMoveTime = performance.now() / 1000;
-        this.hasUserInteracted = true;
-      }
-
       resizeCanvas() {
         const container = this.canvas.parentElement;
         this.canvas.width = container.clientWidth;
         this.canvas.height = container.clientHeight;
-        if (this.gl) {
-          this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
-        }
+        this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
       }
-
       startFadeInSequence() {
         const canvas = this.canvas;
         const titleOverlay = document.getElementById('titleOverlay');
-        
         console.log('Starting fade-in sequence');
-        
         setTimeout(() => {
           canvas.classList.add('fade-in');
           console.log('Canvas fade-in started');
         }, 500);
-        
         setTimeout(() => {
           titleOverlay.classList.add('fade-out');
           console.log('Title fade-out started');
         }, 3700);
       }
-
       render() {
-        try {
-          const gl = this.gl;
-          const now = performance.now() / 1000;
-
-          // Handle fade-in sequence
-          if (this.isLoaded && !this.fadeInStarted) {
-            this.startFadeInSequence();
-            this.fadeInStarted = true;
-          }
-
-          // Only update smoothed mouse position if user has interacted AND recently moved
-          const timeSinceMove = now - this.lastMouseMoveTime;
-          const isRecentlyMoved = timeSinceMove < this.moveThreshold;
-          
-          if (this.hasUserInteracted && isRecentlyMoved) {
-            const smoothingFactor = 0.999;
-            const responseFactor = 0.001;
-            this.smoothedMouseX = this.smoothedMouseX * smoothingFactor + this.mouseX * responseFactor;
-          }
-
-          // Video control - improved mobile handling
-          if (isRecentlyMoved && this.hasUserInteracted) {
-            if (this.video && this.video.paused) {
-              this.video.play().catch(err => console.error("Video play error:", err));
-            }
-          } else {
-            if (this.video && !this.video.paused) {
-              this.video.pause();
-            }
-          }
-
-          // Update fractal time
-          if (isRecentlyMoved && this.hasUserInteracted) {
-            const dx = this.mouseX - this.lastMouseX;
-            const dy = this.mouseY - this.lastMouseY;
-            const distance = Math.sqrt(dx * dx + dy * dy);
-            this.fractalTime += distance * 0.015;
-          }
-          this.lastMouseX = this.mouseX;
-          this.lastMouseY = this.mouseY;
-
-          this.updateVideoTexture();
-          gl.clearColor(0, 0, 0, 1);
-          gl.clear(gl.COLOR_BUFFER_BIT);
-
-          if (!this.textures || this.textures.length < 2) {
-            requestAnimationFrame(() => this.render());
-            return;
-          }
-
-          gl.useProgram(this.program);
-
-          // Pass uniforms to shader
-          gl.uniform2f(gl.getUniformLocation(this.program, 'u_resolution'), this.canvas.width, this.canvas.height);
-          gl.uniform2f(gl.getUniformLocation(this.program, 'u_imageResolution'), this.imageWidth, this.imageHeight);
-          gl.uniform1f(gl.getUniformLocation(this.program, 'u_time'), this.fractalTime);
-          gl.uniform1f(gl.getUniformLocation(this.program, 'u_videoTime'), this.video && !this.video.paused ? this.video.currentTime : (this.pausedVideoTime || 0));
-          gl.uniform1f(gl.getUniformLocation(this.program, 'u_fractalIntensity'), 0.5);
-          gl.uniform1f(gl.getUniformLocation(this.program, 'u_dispAmount'), 0.05);
-          gl.uniform1f(gl.getUniformLocation(this.program, 'u_dispScale'), 1.0);
-          gl.uniform1f(gl.getUniformLocation(this.program, 'u_imageCount'), this.imagePaths.length);
-
-          // Calculate transition value - starts at center and only changes with interaction
-          const rawTransition = this.hasUserInteracted ? 
-            (this.smoothedMouseX / this.canvas.width) : 
-            0.5;
-          
-          const t = Math.max(0, Math.min(0.999, rawTransition)) * this.transitionMultiplier;
-          gl.uniform1f(gl.getUniformLocation(this.program, 'u_transition'), t);
-
-          // Store video time for pausing
-          if (this.video && this.video.paused && !this.pausedVideoTime) {
-            this.pausedVideoTime = this.video.currentTime;
-          } else if (this.video && !this.video.paused) {
-            this.pausedVideoTime = null;
-          }
-
-          // Get randomized indices
-          const baseIndex = this.getRandomizedIndex(t);
-          const nextIndex = this.getRandomizedIndex(Math.min(0.999, t + 0.02));
-
-          // Bind textures
-          gl.activeTexture(gl.TEXTURE0);
-          gl.bindTexture(gl.TEXTURE_2D, this.textures[baseIndex]);
-          gl.uniform1i(gl.getUniformLocation(this.program, 'u_image0'), 0);
-          
-          gl.activeTexture(gl.TEXTURE1);
-          gl.bindTexture(gl.TEXTURE_2D, this.textures[nextIndex]);
-          gl.uniform1i(gl.getUniformLocation(this.program, 'u_image1'), 1);
-
-          gl.activeTexture(gl.TEXTURE2);
-          gl.bindTexture(gl.TEXTURE_2D, this.dispVideoTexture);
-          gl.uniform1i(gl.getUniformLocation(this.program, 'u_dispVideo'), 2);
-
-          gl.drawArrays(gl.TRIANGLES, 0, 6);
-
-        } catch (error) {
-          console.error('Render error:', error);
-          showError(`Render error: ${error.message}`);
+        const gl = this.gl;
+        const now = performance.now() / 1000;
+        if (this.isLoaded && !this.fadeInStarted) {
+          this.startFadeInSequence();
+          this.fadeInStarted = true;
         }
-        
+        const timeSinceMove = now - this.lastMouseMoveTime;
+        const isRecentlyMoved = timeSinceMove < this.moveThreshold;
+        if (this.hasUserInteracted && isRecentlyMoved) {
+          const smoothingFactor = 0.999;
+          const responseFactor = 0.001;
+          this.smoothedMouseX = this.smoothedMouseX * smoothingFactor + this.mouseX * responseFactor;
+        }
+        if (isRecentlyMoved && this.hasUserInteracted) {
+          if (this.video && this.video.paused) {
+            this.video.play().then(() => {
+              // Only log if it's first play
+              if (!this._playedLogged) {
+                console.log('Video play triggered in render().');
+                this._playedLogged = true;
+              }
+            }).catch(err => {
+              if (!this._playFailLogged) {
+                console.log("Video autoplay not allowed in render():", err);
+                this._playFailLogged = true;
+              }
+            });
+          }
+        } else {
+          if (this.video && !this.video.paused) {
+            this.video.pause();
+          }
+        }
+        if (isRecentlyMoved && this.hasUserInteracted) {
+          const dx = this.mouseX - this.lastMouseX;
+          const dy = this.mouseY - this.lastMouseY;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+          this.fractalTime += distance * 0.015;
+        }
+        this.lastMouseX = this.mouseX;
+        this.lastMouseY = this.mouseY;
+        this.updateVideoTexture();
+        gl.clearColor(0, 0, 0, 1);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        if (!this.textures || this.textures.length < 2) {
+          requestAnimationFrame(() => this.render());
+          return;
+        }
+        gl.useProgram(this.program);
+        gl.uniform2f(gl.getUniformLocation(this.program, 'u_resolution'), this.canvas.width, this.canvas.height);
+        gl.uniform2f(gl.getUniformLocation(this.program, 'u_imageResolution'), this.imageWidth, this.imageHeight);
+        gl.uniform1f(gl.getUniformLocation(this.program, 'u_time'), this.fractalTime);
+        gl.uniform1f(gl.getUniformLocation(this.program, 'u_videoTime'), this.video && !this.video.paused ? this.video.currentTime : (this.pausedVideoTime || 0));
+        gl.uniform1f(gl.getUniformLocation(this.program, 'u_fractalIntensity'), 0.5);
+        gl.uniform1f(gl.getUniformLocation(this.program, 'u_dispAmount'), 0.05);
+        gl.uniform1f(gl.getUniformLocation(this.program, 'u_dispScale'), 1.0);
+        gl.uniform1f(gl.getUniformLocation(this.program, 'u_imageCount'), this.imagePaths.length);
+        const rawTransition = this.hasUserInteracted ?
+          (this.smoothedMouseX / this.canvas.width) :
+          0.5;
+        const t = Math.max(0, Math.min(0.999, rawTransition)) * this.transitionMultiplier;
+        gl.uniform1f(gl.getUniformLocation(this.program, 'u_transition'), t);
+        if (this.video && this.video.paused && !this.pausedVideoTime) {
+          this.pausedVideoTime = this.video.currentTime;
+        } else if (this.video && !this.video.paused) {
+          this.pausedVideoTime = null;
+        }
+        const baseIndex = this.getRandomizedIndex(t);
+        const nextIndex = this.getRandomizedIndex(Math.min(0.999, t + 0.02));
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this.textures[baseIndex]);
+        gl.uniform1i(gl.getUniformLocation(this.program, 'u_image0'), 0);
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, this.textures[nextIndex]);
+        gl.uniform1i(gl.getUniformLocation(this.program, 'u_image1'), 1);
+        gl.activeTexture(gl.TEXTURE2);
+        gl.bindTexture(gl.TEXTURE_2D, this.dispVideoTexture);
+        gl.uniform1i(gl.getUniformLocation(this.program, 'u_dispVideo'), 2);
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
         requestAnimationFrame(() => this.render());
       }
     }
-
     window.addEventListener('load', () => {
-      try {
-        new OrganicFluidTransition();
-      } catch (error) {
-        showError(`Initialization error: ${error.message}`);
-        console.error('Initialization error:', error);
-      }
+      new OrganicFluidTransition();
     });
   </script>
 </body>
