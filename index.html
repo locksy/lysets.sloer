@@ -6,62 +6,179 @@
   <title>lysets.slør loading</title>
   <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@700&display=swap" rel="stylesheet">
   <style>
-    html, body { margin: 0; padding: 0; background: #000; height: 100vh; display: flex; justify-content: center; align-items: center; font-family: 'Oswald', sans-serif; overflow: hidden; }
-    #container { position: relative; display: inline-block; }
-    #splash { display: block; width: 100%; height: auto; max-width: 100vw; max-height: 100vh; opacity: 0; z-index: 0; transition: opacity 0.5s ease-out; }
-    #loadingGif { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); mix-blend-mode: lighten; pointer-events: none; z-index: 2; max-width: 80vw; max-height: 80vh; opacity: 0; transition: opacity 0.3s ease-in; }
-    .loader-text-wrapper { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); pointer-events: none; mix-blend-mode: hard-light; opacity: 0.9; z-index: 3; text-align: center; }
-    .loader-text, .loader-fill { font-size: 100px; font-weight: 700; letter-spacing: 2px; line-height: 1; }
-    .loader-text { color: rgba(255, 255, 255, 0.1); }
-    .loader-fill { position: absolute; top: 0; left: 0; white-space: nowrap; width: 0%; overflow: hidden; background: linear-gradient(90deg, rgba(255, 0, 204, 0.5), rgba(0, 180, 255, 0.9), rgba(255, 255, 0, 0.6)); background-clip: text; -webkit-background-clip: text; -webkit-text-fill-color: transparent; color: transparent; transition: width 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94); }
-    .loader-subtext { display: block; margin: 4px auto 0; width: 75%; font-size: 20px; letter-spacing: 8px; color: rgba(255,255,255,0.85); }
-    
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #000;
+      height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-family: 'Oswald', sans-serif;
+      overflow: hidden;
+    }
+    #container {
+      position: relative;
+      display: inline-block;
+    }
+    #splash {
+      display: block;
+      width: 100%;
+      height: auto;
+      max-width: 100vw;
+      max-height: 100vh;
+      opacity: 0;
+      z-index: 0;
+      transition: opacity 0.5s ease-out;
+    }
+    #loadingGif {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      mix-blend-mode: lighten;
+      pointer-events: none;
+      z-index: 2;
+      max-width: 80vw;
+      max-height: 80vh;
+      opacity: 0;
+      transition: opacity 0.3s ease-in;
+    }
+    .loader-text-wrapper {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      mix-blend-mode: hard-light;
+      opacity: 0.9;
+      z-index: 3;
+      text-align: center;
+    }
+    .loader-text, .loader-fill {
+      font-size: 100px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      line-height: 1;
+    }
+    .loader-text {
+      color: rgba(255, 255, 255, 0.1);
+    }
+    .loader-fill {
+      position: absolute;
+      top: 0;
+      left: 0;
+      white-space: nowrap;
+      width: 0%;
+      overflow: hidden;
+      background: linear-gradient(90deg, rgba(255,0,204,0.5), rgba(0,180,255,0.9), rgba(255,255,0,0.6));
+      background-clip: text;
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      color: transparent;
+      transition: width 0.8s cubic-bezier(0.25,0.46,0.45,0.94);
+    }
+    .loader-subtext {
+      display: block;
+      margin: 4px auto 0;
+      width: 75%;
+      font-size: 20px;
+      letter-spacing: 8px;
+      color: rgba(255,255,255,0.85);
+    }
+
     /* New Counter Styles */
-    .progress-counter { 
-      position: absolute; 
-      top: 50%; 
-      left: 50%; 
-      transform: translate(-50%, -50%); 
-      pointer-events: none; 
-      z-index: 1; 
-      text-align: center; 
-      font-size: 200px; 
-      font-weight: 700; 
-      letter-spacing: 4px; 
-      color: rgba(255, 255, 255, 0.25);
-      text-shadow: 0 0 50px rgba(0, 180, 255, 0.3), 0 0 100px rgba(255, 0, 204, 0.2); 
-      transition: all 0.3s ease-out; 
+    .progress-counter {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      z-index: 1;
+      text-align: center;
+      font-size: 200px;
+      font-weight: 700;
+      letter-spacing: 4px;
+      color: rgba(255,255,255,0.25);
+      text-shadow: 0 0 50px rgba(0,180,255,0.3), 0 0 100px rgba(255,0,204,0.2);
+      transition: all 0.3s ease-out;
     }
-    
-    .fade-screen { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: black; z-index: 999; opacity: 0; transition: opacity 1.4s ease-in-out; }
-    .fade-screen.fade-in { opacity: 1; }
-    #shaderCanvas { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 10; mix-blend-mode: screen; opacity: 0; transition: opacity 1s ease-in-out; }
-    #shaderCanvas.active { opacity: 0.8; }
-    
-    @media (max-width: 768px) { 
-      .loader-text, .loader-fill { font-size: 60px; letter-spacing: 1px; } 
-      .loader-subtext { font-size: 16px; letter-spacing: 4px; } 
-      #loadingGif { max-width: 90vw; max-height: 60vh; }
-      .progress-counter { font-size: 120px; letter-spacing: 2px; }
+
+    .fade-screen {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: black;
+      z-index: 999;
+      opacity: 0;
+      transition: opacity 1.4s ease-in-out;
     }
-    @media (max-width: 480px) { 
-      .loader-text, .loader-fill { font-size: 40px; letter-spacing: 0px; } 
-      .loader-subtext { font-size: 14px; letter-spacing: 2px; }
-      .progress-counter { font-size: 80px; letter-spacing: 1px; }
+    .fade-screen.fade-in {
+      opacity: 1;
+    }
+    #shaderCanvas {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      pointer-events: none;
+      z-index: 10;
+      mix-blend-mode: screen;
+      opacity: 0;
+      transition: opacity 1s ease-in-out;
+    }
+    #shaderCanvas.active {
+      opacity: 0.8;
+    }
+
+
+
+    @media (max-width: 768px) {
+      .loader-text, .loader-fill {
+        font-size: 60px;
+        letter-spacing: 1px;
+      }
+      .loader-subtext {
+        font-size: 16px;
+        letter-spacing: 4px;
+      }
+      #loadingGif {
+        max-width: 90vw;
+        max-height: 60vh;
+      }
+      .progress-counter {
+        font-size: 120px;
+        letter-spacing: 2px;
+      }
+    }
+    @media (max-width: 480px) {
+      .loader-text, .loader-fill {
+        font-size: 40px;
+        letter-spacing: 0px;
+      }
+      .loader-subtext {
+        font-size: 14px;
+        letter-spacing: 2px;
+      }
+      .progress-counter {
+        font-size: 80px;
+        letter-spacing: 1px;
+      }
     }
   </style>
 </head>
 <body>
 
+
+
   <canvas id="shaderCanvas"></canvas>
   <div id="container">
     <img id="splash" src="" alt="Splash Image">
-    
-    <!-- Progress Counter (behind loader text) -->
     <div class="progress-counter" id="progressCounter">0</div>
-    
     <img id="loadingGif" src="" alt="Loading Animation">
-    
     <div class="loader-text-wrapper">
       <div class="loader-text">lysets.slør</div>
       <div class="loader-fill" id="loaderFill">lysets.slør</div>
@@ -72,135 +189,305 @@
 
   <script>
     // --- Mobile Detection ---
-    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
-      ('ontouchstart' in window) ||
-      (navigator.maxTouchPoints > 0) ||
-      (window.innerWidth <= 768);
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
+      || 'ontouchstart' in window
+      || navigator.maxTouchPoints > 0
+      || window.innerWidth <= 768;
+
     // --- File selection ---
     const splashImage = isMobile ? './splash-mobile.jpg' : './splash.jpg';
     const loaderGifFile = isMobile ? './loading-mobile.gif' : './loading.gif';
     const folder = isMobile ? 'img/mobile/' : 'img/desktop/';
-    const video = isMobile ? 'dispvid4-mobile.mp4' : 'dispvid4.mp4';
+    const video = isMobile
+      ? './video-mobile.mp4'
+      : './video-desktop.mp4';
 
-    // --- DOM refs ---
-    const fill = document.getElementById('loaderFill');
-    const fadeScreen = document.getElementById('fadeScreen');
-    const splash = document.getElementById('splash');
-    const loadingGifEl = document.getElementById('loadingGif');
-    const progressCounter = document.getElementById('progressCounter');
-
-    // --- Preload asset list (main page assets) ---
+    // --- Preload asset list (images & video) ---
     const ASSETS = [];
     for (let i = 1; i <= 47; i++) ASSETS.push(folder + i + '.JPG');
-    ASSETS.push(video);
+    
+    // Only add video if not mobile (since video-mobile.mp4 is missing)
+    if (!isMobile) {
+      ASSETS.push(video);
+    }
+    
+    console.log('Assets to load:', ASSETS.length, isMobile ? '(mobile - no video)' : '(desktop - with video)');
 
-    let totalAssets = ASSETS.length, loadedAssets = 0, actualProgress = 0, smoothProgress = 0, animationId = null;
-    let displayedCounter = 0; // For smooth counter animation
+    let totalAssets = ASSETS.length,
+        loadedAssets = 0,
+        failedAssets = 0,
+        actualProgress = 0,
+        smoothProgress = 0,
+        animationId = null,
+        displayedCounter = 0,
+        forceComplete = false;
 
-    // --- Animate progress ---
+    function updateDebugInfo() {
+      document.getElementById('progressDebug').textContent = `${loadedAssets}/${totalAssets}`;
+      document.getElementById('failedAssets').textContent = failedAssets;
+    }
+
     function animateProgress() {
-      const difference = actualProgress - smoothProgress;
-      if (Math.abs(difference) > 0.1) {
-        smoothProgress += difference * 0.08;
-        fill.style.width = smoothProgress + '%';
-        splash.style.opacity = smoothProgress / 100;
-        
-        // Smooth counter animation
-        const counterDifference = smoothProgress - displayedCounter;
-        if (Math.abs(counterDifference) > 0.1) {
-          displayedCounter += counterDifference * 0.1;
-          progressCounter.textContent = Math.round(displayedCounter);
+      const diff = actualProgress - smoothProgress;
+      if (Math.abs(diff) > 0.1) {
+        smoothProgress += diff * 0.08;
+        document.getElementById('loaderFill').style.width = smoothProgress + '%';
+        document.getElementById('splash').style.opacity = smoothProgress / 100;
+        const ctrDiff = smoothProgress - displayedCounter;
+        if (Math.abs(ctrDiff) > 0.1) {
+          displayedCounter += ctrDiff * 0.1;
+          document.getElementById('progressCounter').textContent = Math.round(displayedCounter);
         }
-        
         animationId = requestAnimationFrame(animateProgress);
       } else {
         smoothProgress = actualProgress;
         displayedCounter = actualProgress;
-        fill.style.width = smoothProgress + '%';
-        splash.style.opacity = smoothProgress / 100;
-        progressCounter.textContent = Math.round(displayedCounter);
-        
-        if (smoothProgress >= 100) {
+        document.getElementById('loaderFill').style.width = smoothProgress + '%';
+        document.getElementById('splash').style.opacity = smoothProgress / 100;
+        document.getElementById('progressCounter').textContent = Math.round(displayedCounter);
+        if (smoothProgress >= 100 || forceComplete) {
+          document.getElementById('loadingStatus').textContent = 'Complete! Redirecting...';
           setTimeout(() => {
-            fadeScreen.classList.add('fade-in');
-            setTimeout(() => { window.location.href = 'index2.html'; }, 1400);
+            document.getElementById('fadeScreen').classList.add('fade-in');
+            setTimeout(() => window.location.href = 'index2.html', 1400);
           }, 700);
         }
       }
     }
 
-    // --- Preload main assets (images & video) ---
     function preloadMainAssets() {
-      ASSETS.forEach((url) => {
+      ASSETS.forEach((url, index) => {
         if (url.endsWith('.mp4')) {
-          const video = document.createElement('video');
-          video.preload = 'auto'; video.src = url;
-          video.oncanplaythrough = video.onerror = () => { loadedAssets++; updateProgress(); video.oncanplaythrough = video.onerror = null; };
-          setTimeout(() => { if (video.oncanplaythrough) { loadedAssets++; updateProgress(); video.oncanplaythrough = null; } }, 10000);
+          // Back to simpler video loading like your original
+          const vid = document.createElement('video');
+          vid.preload = 'auto';
+          vid.src = url;
+          vid.muted = true;
+          vid.playsInline = true;
+          vid.loop = true;
+          vid.crossOrigin = 'anonymous';
+          
+          let processed = false;
+          const markComplete = () => {
+            if (!processed) {
+              processed = true;
+              loadedAssets++;
+              updateProgress();
+            }
+          };
+          
+          const markFailed = () => {
+            if (!processed) {
+              processed = true;
+              loadedAssets++; // KEY FIX: Still count failed assets
+              failedAssets++;
+              console.warn('Video failed:', url);
+              updateProgress();
+            }
+          };
+          
+          vid.oncanplaythrough = markComplete;
+          vid.onerror = markFailed;
+          
+          // Keep your original timeout approach
+          setTimeout(markFailed, 8000);
+          
         } else {
+          // Simpler image loading like your original
           const img = new Image();
+          let processed = false;
+          
+          const markComplete = () => {
+            if (!processed) {
+              processed = true;
+              loadedAssets++;
+              updateProgress();
+            }
+          };
+          
+          const markFailed = () => {
+            if (!processed) {
+              processed = true;
+              loadedAssets++; // KEY FIX: Still count failed assets  
+              failedAssets++;
+              console.warn('Image failed:', url);
+              updateProgress();
+            }
+          };
+          
+          img.onload = markComplete;
+          img.onerror = markFailed;
+          
+          // Reasonable timeout
+          setTimeout(markFailed, 5000);
+          
           img.src = url;
-          img.onload = img.onerror = () => { loadedAssets++; updateProgress(); };
         }
       });
     }
+
     function updateProgress() {
-      const percent = Math.min(100, Math.round((loadedAssets / totalAssets) * 100));
-      actualProgress = percent;
+      actualProgress = Math.min(100, Math.round((loadedAssets / totalAssets) * 100));
+      
+      // Complete when all assets are processed (including failed ones)
+      if (loadedAssets >= totalAssets) {
+        actualProgress = 100;
+        // Trigger immediate redirect when complete
+        if (!forceComplete) {
+          console.log('All assets loaded - triggering redirect');
+          forceComplete = true;
+          setTimeout(() => {
+            document.getElementById('fadeScreen').classList.add('fade-in');
+            setTimeout(() => window.location.href = 'index2.html', 1400);
+          }, 700);
+        }
+      }
+      
       if (!animationId && actualProgress > 0) animateProgress();
     }
 
-    // --- Priority: GIF first, then splash, then rest ---
     function loadPriorityAssets() {
-      loadingGifEl.onload = () => {
-        loadingGifEl.style.opacity = '1';
-        splash.onload = () => { preloadMainAssets(); };
-        splash.onerror = () => { preloadMainAssets(); };
-        splash.src = splashImage;
+      const gifEl = document.getElementById('loadingGif');
+      
+      const gifLoaded = () => {
+        gifEl.style.opacity = '1';
+        const splashEl = document.getElementById('splash');
+        
+        const splashLoaded = () => {
+          setTimeout(preloadMainAssets, 100);
+        };
+        
+        splashEl.onload = splashLoaded;
+        splashEl.onerror = () => {
+          console.warn('Splash image failed to load');
+          splashLoaded();
+        };
+        splashEl.src = splashImage;
       };
-      loadingGifEl.onerror = () => { loadingGifEl.style.opacity = '1'; splash.src = splashImage; preloadMainAssets(); };
-      loadingGifEl.src = loaderGifFile;
+      
+      gifEl.onload = gifLoaded;
+      gifEl.onerror = () => {
+        console.warn('Loading GIF failed to load');
+        gifEl.style.opacity = '1';
+        gifLoaded();
+      };
+      
+      // Fallback if GIF doesn't load
+      setTimeout(() => {
+        if (gifEl.style.opacity === '0') {
+          gifLoaded();
+        }
+      }, 3000);
+      
+      gifEl.src = loaderGifFile;
     }
 
-    document.addEventListener('DOMContentLoaded', () => { setTimeout(loadPriorityAssets, 100); });
+    document.addEventListener('DOMContentLoaded', () => {
+      setTimeout(loadPriorityAssets, 100);
+    });
 
-    // --- Shader overlay (optional, works on both) ---
+    // --- Shader overlay (optional) ---
     const canvas = document.getElementById('shaderCanvas');
     const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
     let shaderProgram, timeLocation, resolutionLocation, startTime = Date.now();
+
+    function resize() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+
     function initShader() {
       if (!gl) return;
-      const vSrc = `attribute vec2 position; void main() { gl_Position = vec4(position, 0.0, 1.0); }`;
-      const fSrc = `precision highp float; uniform float iTime; uniform vec2 iResolution; void main() { vec2 fragCoord = gl_FragCoord.xy; vec4 fragColor = vec4(0.0); float t = iTime; float i = 0.0; float z = 0.0; float b; float l; for(int iter = 0; iter < 60; iter++) { i = float(iter); vec3 p = z * normalize(vec3(fragCoord + fragCoord, 0.0) - vec3(iResolution.xy, iResolution.y)); float c = 0.8; float s = -0.6; mat2 rotMat = mat2(c, s, -s, c); p.yz = 0.1 * (rotMat * p.yz); p.z += 80.0; l = length(p) * 0.1; z += 1.0 + abs(l - 1.2); l += 1.0; vec3 cosP = cos(p / l - t); vec3 sinP = sin(p / l / 0.4 + t); b = dot(cosP, sinP.yzx); vec4 colorWave = 1.0 + cos(tanh(l - 6.0) * 6.0 - vec4(2.0, 3.0, 4.0, 0.0)); fragColor += colorWave * b * b * b * b / z; } fragColor = tanh(fragColor / 2.0); gl_FragColor = fragColor; }`;
-      function compile(s, t) { const sh = gl.createShader(t); gl.shaderSource(sh, s); gl.compileShader(sh); if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) { gl.deleteShader(sh); return null; } return sh; }
-      const vs = compile(vSrc, gl.VERTEX_SHADER), fs = compile(fSrc, gl.FRAGMENT_SHADER); if (!vs || !fs) return;
-      shaderProgram = gl.createProgram(); gl.attachShader(shaderProgram, vs); gl.attachShader(shaderProgram, fs); gl.linkProgram(shaderProgram);
-      if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) return;
-      timeLocation = gl.getUniformLocation(shaderProgram, 'iTime'); resolutionLocation = gl.getUniformLocation(shaderProgram, 'iResolution');
-      const positions = new Float32Array([-1,-1, 1,-1, -1,1, 1,1]);
-      const positionBuffer = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer); gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
-      const positionLocation = gl.getAttribLocation(shaderProgram, 'position'); gl.enableVertexAttribArray(positionLocation); gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
-      render();
+      const vSrc = `
+        attribute vec2 position;
+        void main() {
+          gl_Position = vec4(position, 0.0, 1.0);
+        }
+      `;
+      const fSrc = `
+        precision highp float;
+        uniform float iTime;
+        uniform vec2 iResolution;
+        void mainImage(out vec4 fragColor, vec2 fragCoord) {
+          vec2 uv = (fragCoord - 0.5 * iResolution) / iResolution.y;
+          float t = iTime * 0.1;
+          vec2 p = uv;
+          float c = 0.2;
+          for(int i = 0; i < 5; i++){
+            p = abs(p) / dot(p,p) - c;
+          }
+          fragColor = vec4(vec3(length(p)), 1.0);
+        }
+        void main() {
+          mainImage(gl_FragColor, gl_FragCoord.xy);
+        }
+      `;
+
+      function compile(src, type) {
+        const sh = gl.createShader(type);
+        gl.shaderSource(sh, src);
+        gl.compileShader(sh);
+        if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+          console.error('Shader compile failed:', gl.getShaderInfoLog(sh));
+          gl.deleteShader(sh);
+          return null;
+        }
+        return sh;
+      }
+
+      const vs = compile(vSrc, gl.VERTEX_SHADER);
+      const fs = compile(fSrc, gl.FRAGMENT_SHADER);
+      if (!vs || !fs) return;
+
+      shaderProgram = gl.createProgram();
+      gl.attachShader(shaderProgram, vs);
+      gl.attachShader(shaderProgram, fs);
+      gl.linkProgram(shaderProgram);
+      if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
+        console.error('Program link failed:', gl.getProgramInfoLog(shaderProgram));
+        return;
+      }
+
+      timeLocation = gl.getUniformLocation(shaderProgram, 'iTime');
+      resolutionLocation = gl.getUniformLocation(shaderProgram, 'iResolution');
+
+      const posLoc = gl.getAttribLocation(shaderProgram, 'position');
+      const buf = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+        -1, -1, 1, -1, -1, 1, 1, 1
+      ]), gl.STATIC_DRAW);
+
+      gl.enableVertexAttribArray(posLoc);
+      gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
     }
-    function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; if (gl) gl.viewport(0, 0, canvas.width, canvas.height); }
+
     function render() {
       if (!shaderProgram) return;
-      const currentTime = (Date.now() - startTime) / 1000;
-      gl.clear(gl.COLOR_BUFFER_BIT); gl.useProgram(shaderProgram);
-      gl.uniform1f(timeLocation, currentTime); gl.uniform2f(resolutionLocation, canvas.width, canvas.height);
+      const t = (Date.now() - startTime) / 1000;
+      gl.viewport(0, 0, canvas.width, canvas.height);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.useProgram(shaderProgram);
+      gl.uniform1f(timeLocation, t);
+      gl.uniform2f(resolutionLocation, canvas.width, canvas.height);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
       requestAnimationFrame(render);
     }
-    window.addEventListener('load', () => { resize(); if (gl) initShader(); setTimeout(() => { canvas.classList.add('active'); }, 1000); });
-    window.addEventListener('resize', resize);
 
-    // --- Orientation/device type change reload ---
+    window.addEventListener('load', () => {
+      resize();
+      initShader();
+      render();
+      setTimeout(() => canvas.classList.add('active'), 1000);
+    });
+    
     window.addEventListener('resize', () => {
-      const newIsMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
-        ('ontouchstart' in window) ||
-        (navigator.maxTouchPoints > 0) ||
-        (window.innerWidth <= 768);
-      if (newIsMobile !== isMobile) location.reload();
+      const newMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
+        || 'ontouchstart' in window
+        || navigator.maxTouchPoints > 0
+        || window.innerWidth <= 768;
+      if (newMobile !== isMobile) location.reload();
+      resize();
     });
   </script>
 </body>
