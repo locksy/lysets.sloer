@@ -55,12 +55,27 @@
     .title-overlay.fade-out {
       opacity: 0;
     }
-    #motionBtn { display: none; }
+    .error-message {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: white;
+      text-align: center;
+      font-size: 18px;
+      padding: 20px;
+      background: rgba(0,0,0,0.8);
+      border-radius: 10px;
+      z-index: 20000;
+      max-width: 80%;
+    }
     @media (max-width: 768px) {
       .title-overlay { font-size: 60px; letter-spacing: 1px; }
+      .error-message { font-size: 14px; }
     }
     @media (max-width: 480px) {
       .title-overlay { font-size: 40px; letter-spacing: 0px; }
+      .error-message { font-size: 12px; }
     }
   </style>
 </head>
@@ -69,36 +84,138 @@
     <canvas id="shaderCanvas"></canvas>
   </div>
   <div class="title-overlay" id="titleOverlay">lysets.slør</div>
-  <button id="motionBtn">Click for Device Motion</button>
   <script>
     class OrganicFluidTransition {
       constructor() {
         this.canvas = document.getElementById('shaderCanvas');
-        // --- WebGL2 fallback to WebGL1 + graceful error ---
-        this.gl = this.canvas.getContext('webgl2') || this.canvas.getContext('webgl');
-        if (!this.gl) {
-          document.body.innerHTML = '<div style="color:white;text-align:center;margin-top:40vh;font-size:1.5em;">Sorry, your device does not support WebGL.<br>Try using Chrome or Firefox on Android, or a recent iOS version.<br><br>Tip: If you see this on mobile, try another browser.</div>';
-          console.error('WebGL is not supported on this device.');
+        
+        this.initializeWebGL();
+        if (!this.gl) return;
+        
+        this.setupDeviceDetection();
+        this.setupImagePaths();
+        this.initializeVariables();
+        this.setupShaderSources();
+        
+        // Initialize WebGL components
+        this.program = this.createShaderProgram();
+        if (!this.program) {
+          this.showError('Failed to create shader program. Your device may not support the required graphics features.');
           return;
-        } else {
-          console.log('WebGL context acquired:', this.gl);
         }
-        // --- Device detection ---
+        
+        this.setupBuffers();
+        this.loadTextures();
+        this.loadDispTexture();
+        this.setupEventListeners();
+        this.render();
+      }
+
+      initializeWebGL() {
+        // Mobile-optimized WebGL context options
+        const contextOptions = {
+          alpha: false,
+          antialias: false,
+          preserveDrawingBuffer: false,
+          powerPreference: this.isMobile ? 'default' : 'high-performance',
+          failIfMajorPerformanceCaveat: false
+        };
+        
+        // Try WebGL2 first, then WebGL1
+        this.gl = this.canvas.getContext('webgl2', contextOptions);
+        this.isWebGL2 = !!this.gl;
+        
+        if (!this.gl) {
+          this.gl = this.canvas.getContext('webgl', contextOptions);
+          this.isWebGL2 = false;
+        }
+        
+        if (!this.gl) {
+          this.gl = this.canvas.getContext('experimental-webgl', contextOptions);
+          this.isWebGL2 = false;
+        }
+        
+        if (!this.gl) {
+          this.showError('WebGL is not supported on this device.<br>Try using Chrome or Firefox on Android, or update your iOS version.');
+          return;
+        }
+        
+        console.log(`WebGL context acquired: ${this.isWebGL2 ? 'WebGL2' : 'WebGL1'}`);
+        
+        // Check for required extensions on WebGL1
+        if (!this.isWebGL2) {
+          const extensions = [
+            'OES_texture_float',
+            'OES_texture_half_float',
+            'WEBGL_lose_context'
+          ];
+          
+          this.supportedExtensions = {};
+          extensions.forEach(ext => {
+            const extension = this.gl.getExtension(ext);
+            this.supportedExtensions[ext] = !!extension;
+            if (extension) {
+              console.log(`✓ Extension ${ext} supported`);
+            } else {
+              console.log(`✗ Extension ${ext} not supported (using fallback)`);
+            }
+          });
+        }
+        
+        // Set up WebGL state for mobile optimization
+        if (this.isMobile) {
+          this.gl.hint(this.gl.FRAGMENT_SHADER_DERIVATIVE_HINT, this.gl.FASTEST);
+          this.gl.disable(this.gl.DEPTH_TEST);
+          this.gl.disable(this.gl.STENCIL_TEST);
+          this.gl.disable(this.gl.DITHER);
+        }
+      }
+
+      setupDeviceDetection() {
         this.isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
                        ('ontouchstart' in window) ||
                        (navigator.maxTouchPoints > 0) ||
                        (window.innerWidth <= 768);
-        console.log(`index2.html - Detected device type: ${this.isMobile ? 'mobile' : 'desktop'}`);
-        // --- Image paths ---
+        
+        console.log(`Device Detection Results:`);
+        console.log(`- User Agent: ${navigator.userAgent}`);
+        console.log(`- Touch Support: ${'ontouchstart' in window}`);
+        console.log(`- Max Touch Points: ${navigator.maxTouchPoints}`);
+        console.log(`- Screen Size: ${window.innerWidth}x${window.innerHeight}`);
+        console.log(`- Device Pixel Ratio: ${window.devicePixelRatio}`);
+        console.log(`- Detected as Mobile: ${this.isMobile}`);
+        
+        // Additional mobile checks
+        if (this.isMobile) {
+          console.log(`Mobile-specific info:`);
+          console.log(`- Platform: ${navigator.platform}`);
+          console.log(`- Hardware Concurrency: ${navigator.hardwareConcurrency || 'unknown'}`);
+          console.log(`- Memory: ${navigator.deviceMemory ? navigator.deviceMemory + 'GB' : 'unknown'}`);
+          
+          // Reduce image quality expectations for low-end devices
+          this.mobileOptimizations = {
+            reducedQuality: navigator.hardwareConcurrency <= 4 || (navigator.deviceMemory && navigator.deviceMemory <= 2),
+            reducedEffects: window.devicePixelRatio > 2.5 // Very high DPI might struggle
+          };
+          
+          if (this.mobileOptimizations.reducedQuality) {
+            console.log(`📱 Applying low-end mobile optimizations`);
+          }
+        }
+      }
+
+      setupImagePaths() {
         const folder = this.isMobile ? './img/mobile/' : './img/desktop/';
         this.imagePaths = [];
         for (let i = 1; i <= 47; i++) {
           this.imagePaths.push(folder + i + '.JPG');
         }
         console.log(`Loading ${this.imagePaths.length} images from: ${folder}`);
-        // --- Transition and geometry vars ---
+      }
+
+      initializeVariables() {
         this.transitionMultiplier = 0.8;
-        this.imageWidth = 1920;
+        this.imageWidth = 1920;   // Keep desktop dimensions as default
         this.imageHeight = 1080;
         this.mouseX = window.innerWidth / 2;
         this.mouseY = window.innerHeight / 2;
@@ -118,175 +235,320 @@
         this.fadeInStarted = false;
         this.fractalTime = 0;
         this.lastFrameTime = performance.now() / 1000;
-        // --- Shader sources unchanged ---
-        this.vertexShaderSource = `#version 300 es
-          in vec4 a_position;
-          in vec2 a_texCoord;
-          out vec2 v_texCoord;
-          void main() {
-            gl_Position = a_position;
-            v_texCoord = a_texCoord;
-          }
-        `;
-        this.fragmentShaderSource = `#version 300 es
-          precision highp float;
-          #define PI 3.14159265359
-          uniform sampler2D u_image0;
-          uniform sampler2D u_image1;
-          uniform sampler2D u_dispVideo;
-          uniform vec2 u_resolution;
-          uniform vec2 u_imageResolution;
-          uniform float u_time;
-          uniform float u_fractalIntensity;
-          uniform float u_dispAmount;
-          uniform float u_dispScale;
-          uniform float u_transition;
-          uniform float u_imageCount;
-          uniform float u_videoTime;
-          in vec2 v_texCoord;
-          out vec4 outColor;
-          vec2 getImageUV(vec2 coord) {
-            vec2 imagePixelSize = u_imageResolution;
-            vec2 screenPixelSize = u_resolution;
-            vec2 displaySize = imagePixelSize;
-            vec2 screenPixel = coord * screenPixelSize;
-            vec2 imageOffset = (screenPixelSize - displaySize) * 0.5;
-            vec2 imagePixel = screenPixel - imageOffset;
-            vec2 imageUV = imagePixel / displaySize;
-            return imageUV;
-          }
-          vec2 getMirroredUV(vec2 coord) {
-            vec2 imagePixelSize = u_imageResolution;
-            vec2 screenPixelSize = u_resolution;
-            vec2 displaySize = imagePixelSize;
-            vec2 screenPixel = coord * screenPixelSize;
-            vec2 imageOffset = (screenPixelSize - displaySize) * 0.5;
-            vec2 imagePixel = screenPixel - imageOffset;
-            vec2 imageUV = imagePixel / displaySize;
-            if (imageUV.x >= 0.0 && imageUV.x <= 1.0 && imageUV.y >= 0.0 && imageUV.y <= 1.0) {
+        this.loadingErrors = [];
+      }
+
+      setupShaderSources() {
+        if (this.isWebGL2) {
+          this.vertexShaderSource = `#version 300 es
+            in vec4 a_position;
+            in vec2 a_texCoord;
+            out vec2 v_texCoord;
+            void main() {
+              gl_Position = a_position;
+              v_texCoord = a_texCoord;
+            }
+          `;
+          this.fragmentShaderSource = `#version 300 es
+            precision highp float;
+            #define PI 3.14159265359
+            uniform sampler2D u_image0;
+            uniform sampler2D u_image1;
+            uniform sampler2D u_dispVideo;
+            uniform vec2 u_resolution;
+            uniform vec2 u_imageResolution;
+            uniform float u_time;
+            uniform float u_fractalIntensity;
+            uniform float u_dispAmount;
+            uniform float u_dispScale;
+            uniform float u_transition;
+            uniform float u_imageCount;
+            uniform float u_videoTime;
+            in vec2 v_texCoord;
+            out vec4 outColor;
+            
+            vec2 getImageUV(vec2 coord) {
+              vec2 imagePixelSize = u_imageResolution;
+              vec2 screenPixelSize = u_resolution;
+              vec2 displaySize = imagePixelSize;
+              vec2 screenPixel = coord * screenPixelSize;
+              vec2 imageOffset = (screenPixelSize - displaySize) * 0.5;
+              vec2 imagePixel = screenPixel - imageOffset;
+              vec2 imageUV = imagePixel / displaySize;
               return imageUV;
             }
-            vec2 mirroredUV = imageUV;
-            if (imageUV.x < 0.0) {
-              mirroredUV.x = -imageUV.x;
-            } else if (imageUV.x > 1.0) {
-              mirroredUV.x = 2.0 - imageUV.x;
+            
+            vec2 getMirroredUV(vec2 coord) {
+              vec2 imagePixelSize = u_imageResolution;
+              vec2 screenPixelSize = u_resolution;
+              vec2 displaySize = imagePixelSize;
+              vec2 screenPixel = coord * screenPixelSize;
+              vec2 imageOffset = (screenPixelSize - displaySize) * 0.5;
+              vec2 imagePixel = screenPixel - imageOffset;
+              vec2 imageUV = imagePixel / displaySize;
+              if (imageUV.x >= 0.0 && imageUV.x <= 1.0 && imageUV.y >= 0.0 && imageUV.y <= 1.0) {
+                return imageUV;
+              }
+              vec2 mirroredUV = imageUV;
+              if (imageUV.x < 0.0) {
+                mirroredUV.x = -imageUV.x;
+              } else if (imageUV.x > 1.0) {
+                mirroredUV.x = 2.0 - imageUV.x;
+              }
+              if (imageUV.y < 0.0) {
+                mirroredUV.y = -imageUV.y;
+              } else if (imageUV.y > 1.0) {
+                mirroredUV.y = 2.0 - imageUV.y;
+              }
+              mirroredUV = clamp(mirroredUV, 0.0, 1.0);
+              return mirroredUV;
             }
-            if (imageUV.y < 0.0) {
-              mirroredUV.y = -imageUV.y;
-            } else if (imageUV.y > 1.0) {
-              mirroredUV.y = 2.0 - imageUV.y;
+            
+            vec4 baseTransition() {
+              float transitionVal = u_transition * u_imageCount;
+              float blendFactor = fract(transitionVal);
+              vec2 imageUV = getImageUV(v_texCoord);
+              if (imageUV.x < 0.0 || imageUV.x > 1.0 || imageUV.y < 0.0 || imageUV.y > 1.0) {
+                return vec4(0.0, 0.0, 0.0, 1.0);
+              }
+              vec2 timeOffset = vec2(0.015 * sin(u_videoTime * 0.25), 0.015 * cos(u_videoTime * 0.25));
+              vec2 dispCoord = imageUV * u_dispScale + timeOffset;
+              vec2 videoDisp = texture(u_dispVideo, dispCoord).rg;
+              float watermarkMask = 1.0;
+              if (dispCoord.x > 0.7 && dispCoord.y < 0.3) {
+                float xFade = smoothstep(0.7, 0.9, dispCoord.x);
+                float yFade = smoothstep(0.3, 0.1, dispCoord.y);
+                watermarkMask = 1.0 - (xFade * yFade);
+                videoDisp = mix(videoDisp, vec2(0.5, 0.5), 1.0 - watermarkMask);
+              }
+              float dynamicDisp = u_dispAmount * (1.0 + 0.4 * sin(u_videoTime * 0.15));
+              vec2 displacement = (videoDisp - 0.5) * dynamicDisp * 1.5 * watermarkMask;
+              vec2 displacedUV0 = clamp(imageUV + displacement * (1.0 - blendFactor), 0.0, 1.0);
+              vec2 displacedUV1 = clamp(imageUV - displacement * blendFactor, 0.0, 1.0);
+              vec4 color0 = texture(u_image0, displacedUV0);
+              vec4 color1 = texture(u_image1, displacedUV1);
+              return mix(color0, color1, blendFactor);
             }
-            mirroredUV = clamp(mirroredUV, 0.0, 1.0);
-            return mirroredUV;
-          }
-          vec4 baseTransition() {
-            float transitionVal = u_transition * u_imageCount;
-            float blendFactor = fract(transitionVal);
-            vec2 imageUV = getImageUV(v_texCoord);
-            if (imageUV.x < 0.0 || imageUV.x > 1.0 || imageUV.y < 0.0 || imageUV.y > 1.0) {
-              return vec4(0.0, 0.0, 0.0, 1.0);
+            
+            vec4 clearTransition() {
+              float transitionVal = u_transition * u_imageCount;
+              float blendFactor = fract(transitionVal);
+              vec2 imageUV = getImageUV(v_texCoord);
+              if (imageUV.x < 0.0 || imageUV.x > 1.0 || imageUV.y < 0.0 || imageUV.y > 1.0) {
+                return vec4(0.0, 0.0, 0.0, 1.0);
+              }
+              return mix(texture(u_image0, imageUV), texture(u_image1, imageUV), blendFactor);
             }
-            vec2 timeOffset = vec2(0.015 * sin(u_videoTime * 0.25), 0.015 * cos(u_videoTime * 0.25));
-            vec2 dispCoord = imageUV * u_dispScale + timeOffset;
-            vec2 videoDisp = texture(u_dispVideo, dispCoord).rg;
-            float watermarkMask = 1.0;
-            if (dispCoord.x > 0.7 && dispCoord.y < 0.3) {
-              float xFade = smoothstep(0.7, 0.9, dispCoord.x);
-              float yFade = smoothstep(0.3, 0.1, dispCoord.y);
-              watermarkMask = 1.0 - (xFade * yFade);
-              videoDisp = mix(videoDisp, vec2(0.5, 0.5), 1.0 - watermarkMask);
+            
+            vec3 hsv(float h, float s, float v) {
+              vec3 k = vec3(1.0, 2.0/3.0, 1.0/3.0);
+              vec3 p = abs(fract(vec3(h) + k) * 6.0 - 3.0);
+              return v * mix(vec3(1.0), clamp(p - 1.0, 0.0, 1.0), s);
             }
-            float dynamicDisp = u_dispAmount * (1.0 + 0.4 * sin(u_videoTime * 0.15));
-            vec2 displacement = (videoDisp - 0.5) * dynamicDisp * 1.5 * watermarkMask;
-            vec2 displacedUV0 = clamp(imageUV + displacement * (1.0 - blendFactor), 0.0, 1.0);
-            vec2 displacedUV1 = clamp(imageUV - displacement * blendFactor, 0.0, 1.0);
-            vec4 color0 = texture(u_image0, displacedUV0);
-            vec4 color1 = texture(u_image1, displacedUV1);
-            return mix(color0, color1, blendFactor);
-          }
-          vec4 clearTransition() {
-            float transitionVal = u_transition * u_imageCount;
-            float blendFactor = fract(transitionVal);
-            vec2 imageUV = getImageUV(v_texCoord);
-            if (imageUV.x < 0.0 || imageUV.x > 1.0 || imageUV.y < 0.0 || imageUV.y > 1.0) {
-              return vec4(0.0, 0.0, 0.0, 1.0);
+            
+            vec3 formula(in vec2 _p, in vec2 c) {
+              vec2 p = _p;
+              const float n = 2.0;
+              const int iters = 12;
+              float timeVal = u_time * 0.1;
+              vec3 col = vec3(0.0);
+              float t = 1.0;
+              float dpp = dot(p, p);
+              float lp = sqrt(dpp);
+              float r = smoothstep(0.0, 0.2, lp);
+              for (int i = 0; i < iters; i++) {
+                p = abs(mod(p/dpp + c, n) - n/2.0);
+                dpp = dot(p, p);
+                lp = sqrt(dpp);
+                t *= smoothstep(0.0, 0.01, abs(n/2.0 - p.x)*lp)
+                   * smoothstep(0.0, 0.01, abs(n/2.0 - p.y)*lp)
+                   * smoothstep(0.0, 0.01, abs(p.x)*2.0)
+                   * smoothstep(0.0, 0.01, abs(p.y)*2.0);
+                r *= smoothstep(0.0, 0.2, lp);
+                col += hsv(1.0 - max(p.x, p.y) + t*2.0 + timeVal, 2.0 - lp + t, r);
+              }
+              return (-cos(col / 4.0)*0.5 + 0.5) * t;
             }
-            return mix(texture(u_image0, imageUV), texture(u_image1, imageUV), blendFactor);
-          }
-          vec3 hsv(float h, float s, float v) {
-            vec3 k = vec3(1.0, 2.0/3.0, 1.0/3.0);
-            vec3 p = abs(fract(vec3(h) + k) * 6.0 - 3.0);
-            return v * mix(vec3(1.0), clamp(p - 1.0, 0.0, 1.0), s);
-          }
-          vec3 formula(in vec2 _p, in vec2 c) {
-            vec2 p = _p;
-            const float n = 2.0;
-            const int iters = 12;
-            float timeVal = u_time * 0.1;
-            vec3 col = vec3(0.0);
-            float t = 1.0;
-            float dpp = dot(p, p);
-            float lp = sqrt(dpp);
-            float r = smoothstep(0.0, 0.2, lp);
-            for (int i = 0; i < iters; i++) {
-              p = abs(mod(p/dpp + c, n) - n/2.0);
-              dpp = dot(p, p);
-              lp = sqrt(dpp);
-              t *= smoothstep(0.0, 0.01, abs(n/2.0 - p.x)*lp)
-                 * smoothstep(0.0, 0.01, abs(n/2.0 - p.y)*lp)
-                 * smoothstep(0.0, 0.01, abs(p.x)*2.0)
-                 * smoothstep(0.0, 0.01, abs(p.y)*2.0);
-              r *= smoothstep(0.0, 0.2, lp);
-              col += hsv(1.0 - max(p.x, p.y) + t*2.0 + timeVal, 2.0 - lp + t, r);
+            
+            vec3 newShaderEffect(vec2 fragCoord) {
+              vec2 p = -1.0 + 2.0 * fragCoord / u_resolution;
+              p.x *= u_resolution.x / u_resolution.y;
+              p *= 2.0;
+              const vec2 e = vec2(0.06545465634, -0.05346356485);
+              vec2 c = u_time * e;
+              vec3 col = vec3(0.0);
+              const float blursamples = 4.0;
+              float sbs = sqrt(blursamples);
+              float mbluramount = 1.0 / u_resolution.x / length(e) / blursamples * 2.0;
+              float aabluramount = 1.0 / u_resolution.x / sbs * 4.0;
+              for (float b = 0.0; b < blursamples; b++) {
+                col += formula(
+                  p + vec2(mod(b, sbs)*aabluramount, floor(b/sbs)*aabluramount),
+                  c + e * mbluramount * b
+                );
+              }
+              col /= blursamples;
+              return col;
             }
-            return (-cos(col / 4.0)*0.5 + 0.5) * t;
-          }
-          vec3 newShaderEffect(vec2 fragCoord) {
-            vec2 p = -1.0 + 2.0 * fragCoord / u_resolution;
-            p.x *= u_resolution.x / u_resolution.y;
-            p *= 2.0;
-            const vec2 e = vec2(0.06545465634, -0.05346356485);
-            vec2 c = u_time * e;
-            vec3 col = vec3(0.0);
-            const float blursamples = 4.0;
-            float sbs = sqrt(blursamples);
-            float mbluramount = 1.0 / u_resolution.x / length(e) / blursamples * 2.0;
-            float aabluramount = 1.0 / u_resolution.x / sbs * 4.0;
-            for (float b = 0.0; b < blursamples; b++) {
-              col += formula(
-                p + vec2(mod(b, sbs)*aabluramount, floor(b/sbs)*aabluramount),
-                c + e * mbluramount * b
-              );
+            
+            vec3 colorDodgeBlend(vec3 base, vec3 blend) {
+              return clamp(base / (1.0 - blend + 0.001), 0.0, 1.0);
             }
-            col /= blursamples;
-            return col;
-          }
-          vec3 colorDodgeBlend(vec3 base, vec3 blend) {
-            return clamp(base / (1.0 - blend + 0.001), 0.0, 1.0);
-          }
-          void main() {
-            float transitionVal = u_transition * u_imageCount;
-            float blendFactor = fract(transitionVal);
-            vec4 clearColor = clearTransition();
-            vec4 distortedColor = baseTransition();
-            float clearPulse = 1.0 - abs(blendFactor - 0.5) * 4.0;
-            clearPulse = clamp(clearPulse, 0.0, 1.0);
-            vec4 finalBase = mix(distortedColor, clearColor, clearPulse);
-            vec3 fractalEffect = newShaderEffect(gl_FragCoord.xy) * u_fractalIntensity * (1.0 - clearPulse);
-            vec3 finalColor = colorDodgeBlend(finalBase.rgb, fractalEffect);
-            outColor = vec4(finalColor, 1.0);
-          }
-        `;
-        // --- Shader program with full error logging and stop on fail ---
-        this.program = this.createShaderProgram();
-        if (!this.program) return;
-        this.setupBuffers();
-        this.loadTextures();
-        this.loadDispTexture();
-        this.setupEventListeners();
-        this.render();
+            
+            void main() {
+              float transitionVal = u_transition * u_imageCount;
+              float blendFactor = fract(transitionVal);
+              vec4 clearColor = clearTransition();
+              vec4 distortedColor = baseTransition();
+              float clearPulse = 1.0 - abs(blendFactor - 0.5) * 4.0;
+              clearPulse = clamp(clearPulse, 0.0, 1.0);
+              vec4 finalBase = mix(distortedColor, clearColor, clearPulse);
+              vec3 fractalEffect = newShaderEffect(gl_FragCoord.xy) * u_fractalIntensity * (1.0 - clearPulse);
+              vec3 finalColor = colorDodgeBlend(finalBase.rgb, fractalEffect);
+              outColor = vec4(finalColor, 1.0);
+            }
+          `;
+        } else {
+          // WebGL1 version optimized for mobile
+          this.vertexShaderSource = `
+            attribute vec4 a_position;
+            attribute vec2 a_texCoord;
+            varying vec2 v_texCoord;
+            void main() {
+              gl_Position = a_position;
+              v_texCoord = a_texCoord;
+            }
+          `;
+          this.fragmentShaderSource = `
+            #ifdef GL_ES
+            precision highp float;
+            #endif
+            uniform sampler2D u_image0;
+            uniform sampler2D u_image1;
+            uniform sampler2D u_dispVideo;
+            uniform vec2 u_resolution;
+            uniform vec2 u_imageResolution;
+            uniform float u_time;
+            uniform float u_fractalIntensity;
+            uniform float u_dispAmount;
+            uniform float u_dispScale;
+            uniform float u_transition;
+            uniform float u_imageCount;
+            uniform float u_videoTime;
+            varying vec2 v_texCoord;
+            
+            vec2 getImageUV(vec2 coord) {
+              vec2 imagePixelSize = u_imageResolution;
+              vec2 screenPixelSize = u_resolution;
+              
+              // Mobile-specific aspect ratio handling
+              float screenAspect = screenPixelSize.x / screenPixelSize.y;
+              float imageAspect = imagePixelSize.x / imagePixelSize.y;
+              
+              vec2 scale = vec2(1.0);
+              vec2 offset = vec2(0.0);
+              
+              if (imageAspect > screenAspect) {
+                // Image is wider - fit to screen width, crop height
+                scale.y = imageAspect / screenAspect;
+              } else {
+                // Image is taller - fit to screen height, crop width
+                scale.x = screenAspect / imageAspect;
+              }
+              
+              vec2 uv = (coord - 0.5) / scale + 0.5;
+              return uv;
+            }
+            
+            vec4 baseTransition() {
+              float transitionVal = u_transition * u_imageCount;
+              float blendFactor = fract(transitionVal);
+              vec2 imageUV = getImageUV(v_texCoord);
+              if (imageUV.x < 0.0 || imageUV.x > 1.0 || imageUV.y < 0.0 || imageUV.y > 1.0) {
+                return vec4(0.0, 0.0, 0.0, 1.0);
+              }
+              vec2 timeOffset = vec2(0.015 * sin(u_videoTime * 0.25), 0.015 * cos(u_videoTime * 0.25));
+              vec2 dispCoord = imageUV * u_dispScale + timeOffset;
+              vec2 videoDisp = texture2D(u_dispVideo, dispCoord).rg;
+              float watermarkMask = 1.0;
+              if (dispCoord.x > 0.7 && dispCoord.y < 0.3) {
+                float xFade = smoothstep(0.7, 0.9, dispCoord.x);
+                float yFade = smoothstep(0.3, 0.1, dispCoord.y);
+                watermarkMask = 1.0 - (xFade * yFade);
+                videoDisp = mix(videoDisp, vec2(0.5, 0.5), 1.0 - watermarkMask);
+              }
+              float dynamicDisp = u_dispAmount * (1.0 + 0.4 * sin(u_videoTime * 0.15));
+              vec2 displacement = (videoDisp - 0.5) * dynamicDisp * 1.5 * watermarkMask;
+              vec2 displacedUV0 = clamp(imageUV + displacement * (1.0 - blendFactor), 0.0, 1.0);
+              vec2 displacedUV1 = clamp(imageUV - displacement * blendFactor, 0.0, 1.0);
+              vec4 color0 = texture2D(u_image0, displacedUV0);
+              vec4 color1 = texture2D(u_image1, displacedUV1);
+              return mix(color0, color1, blendFactor);
+            }
+            
+            vec4 clearTransition() {
+              float transitionVal = u_transition * u_imageCount;
+              float blendFactor = fract(transitionVal);
+              vec2 imageUV = getImageUV(v_texCoord);
+              if (imageUV.x < 0.0 || imageUV.x > 1.0 || imageUV.y < 0.0 || imageUV.y > 1.0) {
+                return vec4(0.0, 0.0, 0.0, 1.0);
+              }
+              return mix(texture2D(u_image0, imageUV), texture2D(u_image1, imageUV), blendFactor);
+            }
+            
+            // Simple fractal for mobile
+            vec3 mobileFractal(vec2 fragCoord) {
+              vec2 p = fragCoord / u_resolution.xy;
+              p = p * 2.0 - 1.0;
+              p.x *= u_resolution.x / u_resolution.y;
+              
+              float time = u_time * 0.1;
+              vec2 z = p;
+              float iterations = 0.0;
+              
+              for(int i = 0; i < 8; i++) {
+                if(dot(z, z) > 4.0) break;
+                z = vec2(z.x * z.x - z.y * z.y, 2.0 * z.x * z.y) + p + vec2(cos(time), sin(time)) * 0.3;
+                iterations += 1.0;
+              }
+              
+              float intensity = iterations / 8.0;
+              vec3 color = vec3(intensity * 0.8, intensity * 0.6, intensity * 1.0);
+              return color * 0.3;
+            }
+            
+            void main() {
+              float transitionVal = u_transition * u_imageCount;
+              float blendFactor = fract(transitionVal);
+              vec4 clearColor = clearTransition();
+              vec4 distortedColor = baseTransition();
+              float clearPulse = 1.0 - abs(blendFactor - 0.5) * 4.0;
+              clearPulse = clamp(clearPulse, 0.0, 1.0);
+              vec4 finalBase = mix(distortedColor, clearColor, clearPulse);
+              
+              // Add simple fractal for mobile
+              vec3 fractalEffect = mobileFractal(gl_FragCoord.xy) * u_fractalIntensity * (1.0 - clearPulse);
+              vec3 finalColor = finalBase.rgb + fractalEffect;
+              gl_FragColor = vec4(finalColor, 1.0);
+            }
+          `;
+        }
       }
+
+      showError(message) {
+        console.error('OrganicFluidTransition Error:', message);
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'error-message';
+        errorDiv.innerHTML = message;
+        document.body.appendChild(errorDiv);
+        
+        // Hide the title overlay
+        const titleOverlay = document.getElementById('titleOverlay');
+        if (titleOverlay) {
+          titleOverlay.style.display = 'none';
+        }
+      }
+
       generateSegmentedOrder() {
         this.segments = [];
         for (let i = 0; i < 8; i++) this.segments[i] = [];
@@ -305,46 +567,41 @@
           }
         }
         console.log('Generated segmented random order for better distribution');
-        console.log('Order preview:', this.imageOrder.slice(0, 16));
       }
+
       getRandomizedIndex(transitionValue) {
         const normalizedTransition = Math.max(0, Math.min(0.999, transitionValue));
         const totalImages = this.imageOrder.length;
         const index = Math.floor(normalizedTransition * totalImages);
         return this.imageOrder[index];
       }
+
       shuffleArray(array) {
         for (let i = array.length - 1; i > 0; i--) {
           const j = Math.floor(Math.random() * (i + 1));
           [array[i], array[j]] = [array[j], array[i]];
         }
       }
+
       createShaderProgram() {
         const gl = this.gl;
-        // Decide on shader version based on context (WebGL1/WebGL2)
-        let vSource = this.vertexShaderSource;
-        let fSource = this.fragmentShaderSource;
-        // If using WebGL1, strip #version and change out/in to varying/attribute
-        if (gl instanceof WebGLRenderingContext) {
-          // Convert GLSL ES 3.0 to GLSL ES 1.0 (very minimal, may need more conversion for complex shaders)
-          vSource = vSource.replace(/#version 300 es[\s\S]*?in /g, 'attribute ').replace(/out /g, 'varying ');
-          fSource = fSource.replace(/#version 300 es[\s\S]*?in /g, 'varying ').replace(/outColor/g, 'gl_FragColor');
-        }
-        // Compile
+        
         const vertexShader = gl.createShader(gl.VERTEX_SHADER);
-        gl.shaderSource(vertexShader, vSource);
+        gl.shaderSource(vertexShader, this.vertexShaderSource);
         gl.compileShader(vertexShader);
         if (!gl.getShaderParameter(vertexShader, gl.COMPILE_STATUS)) {
           console.error('Vertex shader error:', gl.getShaderInfoLog(vertexShader));
           return null;
         }
+
         const fragmentShader = gl.createShader(gl.FRAGMENT_SHADER);
-        gl.shaderSource(fragmentShader, fSource);
+        gl.shaderSource(fragmentShader, this.fragmentShaderSource);
         gl.compileShader(fragmentShader);
         if (!gl.getShaderParameter(fragmentShader, gl.COMPILE_STATUS)) {
           console.error('Fragment shader error:', gl.getShaderInfoLog(fragmentShader));
           return null;
         }
+
         const program = gl.createProgram();
         gl.attachShader(program, vertexShader);
         gl.attachShader(program, fragmentShader);
@@ -353,8 +610,10 @@
           console.error('Program linking error:', gl.getProgramInfoLog(program));
           return null;
         }
+
         return program;
       }
+
       setupBuffers() {
         const gl = this.gl;
         const positionBuffer = gl.createBuffer();
@@ -365,6 +624,7 @@
           1.0, -1.0, 1.0,  1.0
         ];
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
+
         const texCoordBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
         const texCoords = [
@@ -373,50 +633,173 @@
           1.0, 0.0, 1.0, 1.0
         ];
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(texCoords), gl.STATIC_DRAW);
+
         gl.useProgram(this.program);
         const posLoc = gl.getAttribLocation(this.program, 'a_position');
         const texLoc = gl.getAttribLocation(this.program, 'a_texCoord');
+
         gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
         gl.enableVertexAttribArray(posLoc);
         gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
+
         gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
         gl.enableVertexAttribArray(texLoc);
         gl.vertexAttribPointer(texLoc, 2, gl.FLOAT, false, 0, 0);
       }
+
       loadTextures() {
         const gl = this.gl;
         this.textures = [];
         this.images = [];
-        this.imagePaths.forEach(path => {
+        let loadedImages = 0;
+        let failedImages = 0;
+        
+        // Create fallback texture for failed loads
+        this.createFallbackTexture();
+        
+        // Mobile optimization: load images with longer timeout
+        const loadTimeout = this.isMobile ? 10000 : 5000;
+        
+        this.imagePaths.forEach((path, index) => {
           const img = new Image();
+          img.crossOrigin = 'anonymous';
+          
+          let timeoutId;
+          
+          const onLoad = () => {
+            clearTimeout(timeoutId);
+            console.log(`✓ Loaded image ${index + 1}/${this.imagePaths.length}: ${path}`);
+            loadedImages++;
+            this.checkLoadingComplete(loadedImages, failedImages);
+          };
+          
+          const onError = (error) => {
+            clearTimeout(timeoutId);
+            console.error(`✗ Failed to load image ${index + 1}/${this.imagePaths.length}: ${path}`, error);
+            failedImages++;
+            this.loadingErrors.push(path);
+            this.checkLoadingComplete(loadedImages, failedImages);
+          };
+          
+          // Set up timeout for mobile
+          timeoutId = setTimeout(() => {
+            console.warn(`⏱ Timeout loading image ${index + 1}/${this.imagePaths.length}: ${path}`);
+            onError('timeout');
+          }, loadTimeout);
+          
+          img.onload = onLoad;
+          img.onerror = onError;
           img.src = path;
-          img.onload = () => { console.log("Loaded image:", path); };
-          img.onerror = () => { console.error("Failed to load image:", path); };
           this.images.push(img);
         });
-        Promise.all(this.images.map(img => new Promise(resolve => {
-          if (img.complete) resolve();
-          else {
-            img.onload = () => { console.log("Loaded image (Promise):", img.src); resolve(); };
-            img.onerror = () => { console.error("Failed to load image (Promise):", img.src); resolve(); };
+        
+        // Fallback: if no images load after 15 seconds, show error
+        setTimeout(() => {
+          if (loadedImages === 0 && failedImages < this.imagePaths.length) {
+            console.error('Image loading timeout - no images loaded after 15 seconds');
+            this.showError('Images are taking too long to load. Please check your internet connection and try refreshing the page.');
           }
-        }))).then(() => {
-          this.images.forEach(image => {
-            const texture = gl.createTexture();
-            gl.bindTexture(gl.TEXTURE_2D, texture);
-            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
-            this.textures.push(texture);
-          });
-          this.resizeCanvas();
-          this.isLoaded = true;
-          console.log(`Successfully loaded ${this.textures.length} textures`);
-        }).catch(err => console.error('Error loading base images:', err));
+        }, 15000);
       }
+
+      createFallbackTexture() {
+        const gl = this.gl;
+        this.fallbackTexture = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, this.fallbackTexture);
+        
+        // Create a simple gradient texture as fallback
+        const width = 256;
+        const height = 256;
+        const data = new Uint8Array(width * height * 4);
+        for (let i = 0; i < height; i++) {
+          for (let j = 0; j < width; j++) {
+            const index = (i * width + j) * 4;
+            data[index] = Math.floor((j / width) * 255);     // R
+            data[index + 1] = Math.floor((i / height) * 255); // G
+            data[index + 2] = 100;                           // B
+            data[index + 3] = 255;                           // A
+          }
+        }
+        
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
+      }
+
+      checkLoadingComplete(loadedImages, failedImages) {
+        const totalProcessed = loadedImages + failedImages;
+        if (totalProcessed === this.imagePaths.length) {
+          console.log(`Image loading complete: ${loadedImages} loaded, ${failedImages} failed`);
+          
+          if (loadedImages === 0) {
+            this.showError('Failed to load any images. Please check if the image files exist in the correct folder.');
+            return;
+          }
+          
+          if (failedImages > 0) {
+            console.warn(`${failedImages} images failed to load. Using fallback texture for missing images.`);
+          }
+          
+          this.processLoadedImages();
+        }
+      }
+
+      processLoadedImages() {
+        const gl = this.gl;
+        
+        // Only detect mobile image dimensions, keep desktop as-is
+        if (this.isMobile) {
+          let actualImageFound = false;
+          for (let i = 0; i < this.images.length && !actualImageFound; i++) {
+            const image = this.images[i];
+            if (image.complete && image.naturalWidth > 0) {
+              const detectedWidth = image.naturalWidth;
+              const detectedHeight = image.naturalHeight;
+              
+              console.log(`📱 Mobile - Detected actual image dimensions: ${detectedWidth}x${detectedHeight}`);
+              console.log(`📱 Mobile - Previously assumed: ${this.imageWidth}x${this.imageHeight}`);
+              
+              // Update our image dimensions with actual values for mobile only
+              this.imageWidth = detectedWidth;
+              this.imageHeight = detectedHeight;
+              actualImageFound = true;
+              
+              console.log(`📱 Mobile - Updated image dimensions to actual: ${this.imageWidth}x${this.imageHeight}`);
+            }
+          }
+          
+          if (!actualImageFound) {
+            console.warn('⚠️ Mobile - Could not detect actual image dimensions, using defaults');
+          }
+        }
+        
+        this.images.forEach((image, index) => {
+          const texture = gl.createTexture();
+          gl.bindTexture(gl.TEXTURE_2D, texture);
+          gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+          
+          if (image.complete && image.naturalWidth > 0) {
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+          } else {
+            // Use fallback texture for failed images
+            gl.bindTexture(gl.TEXTURE_2D, this.fallbackTexture);
+            gl.copyTexImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 0, 0, 256, 256, 0);
+          }
+          
+          this.textures.push(texture);
+        });
+
+        this.resizeCanvas();
+        this.isLoaded = true;
+        console.log(`✅ Successfully processed ${this.textures.length} textures with dimensions ${this.imageWidth}x${this.imageHeight}`);
+      }
+
       loadDispTexture() {
         const gl = this.gl;
         this.dispVideoTexture = gl.createTexture();
@@ -426,200 +809,570 @@
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 480, 270, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+        
+        // Create initial displacement pattern to test the system (same for desktop and mobile)
+        const width = 480;
+        const height = 270;
+        const data = new Uint8Array(width * height * 4);
+        for (let y = 0; y < height; y++) {
+          for (let x = 0; x < width; x++) {
+            const index = (y * width + x) * 4;
+            // Create a circular wave pattern for testing
+            const centerX = width * 0.5;
+            const centerY = height * 0.5;
+            const dx = x - centerX;
+            const dy = y - centerY;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            const wave = Math.sin(distance * 0.1) * 0.5 + 0.5;
+            
+            data[index] = Math.floor(wave * 255);     // R channel for X displacement
+            data[index + 1] = Math.floor(wave * 255); // G channel for Y displacement
+            data[index + 2] = 128;                    // B channel (unused)
+            data[index + 3] = 255;                    // Alpha
+          }
+        }
+        
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
+        console.log('Created initial displacement texture with test pattern');
+        
+        // Try to preload video immediately if index.html didn't do it
+        this.preloadVideo();
       }
+
+      preloadVideo() {
+        // Check if video was already preloaded by index.html
+        const existingVideos = document.querySelectorAll('video');
+        const videoSrc = this.isMobile ? "./video-mobile.mp4" : "./video-desktop.mp4";
+        
+        for (let video of existingVideos) {
+          if (video.src.includes(this.isMobile ? 'video-mobile' : 'video-desktop')) {
+            console.log('📹 Found preloaded video from index.html');
+            return;
+          }
+        }
+        
+        // If not preloaded, start preloading now
+        console.log('📹 Video not preloaded, starting preload now');
+        
+        const preloadVideo = document.createElement('video');
+        preloadVideo.src = videoSrc;
+        preloadVideo.preload = 'auto';
+        preloadVideo.muted = true;
+        preloadVideo.style.display = 'none';
+        
+        preloadVideo.addEventListener('loadeddata', () => {
+          console.log('📹 Video preload completed');
+        });
+        
+        preloadVideo.addEventListener('error', () => {
+          console.warn('📹 Video preload failed');
+        });
+        
+        document.body.appendChild(preloadVideo);
+      }
+
       updateVideoTexture() {
         if (!this.video) {
           this.video = document.createElement('video');
-          this.video.src = this.isMobile ? "./dispvid4-mobile.mp4" : "./dispvid4.mp4";
+          
+          // GitHub Pages specific setup
+          const isGitHubPages = window.location.hostname.includes('github.io');
+          const videoPath = this.isMobile ? "./video-mobile.mp4" : "./video-desktop.mp4";
+          
+          // For GitHub Pages, use absolute URL to avoid potential routing issues
+          if (isGitHubPages) {
+            const baseUrl = window.location.origin + window.location.pathname.replace(/\/[^\/]*$/, '/');
+            this.video.src = baseUrl + (this.isMobile ? "video-mobile.mp4" : "video-desktop.mp4");
+          } else {
+            this.video.src = videoPath;
+          }
+          
           this.video.loop = true;
           this.video.muted = true;
           this.video.playsInline = true;
-          this.video.preload = "auto";
+          this.video.preload = "metadata"; // Changed from "auto" for mobile
+          
+          // GitHub Pages serves with proper headers, so crossOrigin is safe
           this.video.crossOrigin = "anonymous";
+          
+          // Enhanced mobile-specific attributes for GitHub Pages
+          if (this.isMobile) {
+            this.video.setAttribute('webkit-playsinline', 'true');
+            this.video.setAttribute('playsinline', 'true');
+            this.video.setAttribute('muted', 'true');
+            // Don't set autoplay on mobile - let user interaction trigger it
+            this.video.setAttribute('preload', 'metadata');
+            
+            console.log(`📱 GitHub Pages mobile video setup: ${this.video.src}`);
+          }
+          
+          // More aggressive mobile loading strategy
+          this.video.addEventListener('loadstart', () => {
+            console.log('📹 Video load started');
+          });
+          
+          this.video.addEventListener('loadedmetadata', () => {
+            console.log(`📹 Video metadata loaded: ${this.video.videoWidth}x${this.video.videoHeight}, duration: ${this.video.duration}s`);
+            
+            // For mobile, try to load more data after metadata
+            if (this.isMobile) {
+              this.video.preload = "auto";
+              console.log('📱 Mobile: Upgrading preload to auto after metadata');
+            }
+          });
+          
           this.video.addEventListener('loadeddata', () => {
-            console.log('Video loaded successfully:', this.video.src);
+            console.log('📹 Video data loaded successfully');
+            
+            // Clear any timeouts since we're successful
+            if (this.videoTimeout) {
+              clearTimeout(this.videoTimeout);
+              this.videoTimeout = null;
+            }
           });
+          
+          this.video.addEventListener('canplay', () => {
+            console.log('📹 Video can play');
+          });
+          
+          this.video.addEventListener('canplaythrough', () => {
+            console.log('📹 Video can play through without buffering');
+          });
+          
+          this.video.addEventListener('progress', () => {
+            if (this.video.buffered.length > 0) {
+              const loaded = this.video.buffered.end(0) / this.video.duration * 100;
+              if (loaded > this.lastReportedProgress + 10) { // Only report every 10%
+                console.log(`📹 Video loading progress: ${loaded.toFixed(1)}%`);
+                this.lastReportedProgress = Math.floor(loaded / 10) * 10;
+              }
+            }
+          });
+          
           this.video.addEventListener('error', (e) => {
-            console.error('Video loading error:', this.video.src, e);
+            const error = this.video.error;
+            let errorMsg = '📹 Video error: ';
+            
+            if (error) {
+              switch(error.code) {
+                case error.MEDIA_ERR_ABORTED:
+                  errorMsg += 'Aborted by user';
+                  break;
+                case error.MEDIA_ERR_NETWORK:
+                  errorMsg += 'Network error - check connection';
+                  break;
+                case error.MEDIA_ERR_DECODE:
+                  errorMsg += 'Decode error - bad file format';
+                  break;
+                case error.MEDIA_ERR_SRC_NOT_SUPPORTED:
+                  errorMsg += 'Source not supported - file not found?';
+                  break;
+                default:
+                  errorMsg += 'Unknown error';
+              }
+            }
+            
+            console.error('📹 Video loading error:', errorMsg, e);
+            console.error('📹 Video src:', this.video.src);
+            console.error('📹 Video error object:', error);
+            
+            // GitHub Pages specific retry strategy
+            this.tryGitHubPagesVideoFallback();
           });
+          
+          this.video.addEventListener('stalled', () => {
+            console.warn('📹 Video loading stalled');
+            
+            // For mobile on GitHub Pages, try a different loading approach
+            if (this.isMobile && !this.stalledRetryAttempted) {
+              this.stalledRetryAttempted = true;
+              setTimeout(() => {
+                console.log('📱 Retrying stalled video load');
+                this.video.load();
+              }, 2000);
+            }
+          });
+          
+          this.video.addEventListener('suspend', () => {
+            console.warn('📹 Video loading suspended by browser (normal for mobile)');
+          });
+          
+          // Shorter timeout for GitHub Pages (faster CDN)
+          const timeoutDuration = this.isMobile ? 12000 : 8000;
+          this.lastReportedProgress = 0;
+          
+          this.videoTimeout = setTimeout(() => {
+            if (this.video.readyState < 2 && !this.videoLoadFailed) {
+              console.warn(`📹 Video timeout after ${timeoutDuration}ms on GitHub Pages`);
+              this.tryGitHubPagesVideoFallback();
+            }
+          }, timeoutDuration);
+          
+          // Start loading
           this.video.load();
+          this.videoRetryCount = 0;
+          this.stalledRetryAttempted = false;
         }
-        if (this.video.readyState >= this.video.HAVE_CURRENT_DATA) {
+
+        // Update texture if video is ready
+        if (this.video.readyState >= this.video.HAVE_CURRENT_DATA && !this.videoLoadFailed) {
           const gl = this.gl;
           gl.bindTexture(gl.TEXTURE_2D, this.dispVideoTexture);
           gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+          
           try {
             gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, this.video);
+            
+            // Log success once
+            if (!this.videoTextureActive) {
+              console.log('📹 Video texture now active for displacement mapping');
+              console.log(`📐 Video texture: ${this.video.videoWidth}x${this.video.videoHeight}`);
+              this.videoTextureActive = true;
+              
+              if (this.videoTimeout) {
+                clearTimeout(this.videoTimeout);
+                this.videoTimeout = null;
+              }
+            }
           } catch (error) {
-            console.error('Error updating video texture:', error);
+            console.warn('📹 Error updating video texture:', error);
+            this.videoLoadFailed = true;
           }
         }
       }
+
+      tryGitHubPagesVideoFallback() {
+        if (this.gitHubPagesFallbackAttempted) return;
+        this.gitHubPagesFallbackAttempted = true;
+        
+        console.log('📹 Trying GitHub Pages video fallback');
+        
+        const fallbackVideo = document.createElement('video');
+        
+        // Try different URL formats for GitHub Pages
+        const possibleUrls = [
+          // Current approach
+          this.isMobile ? "./video-mobile.mp4" : "./video-desktop.mp4",
+          // Absolute path approach
+          window.location.origin + window.location.pathname.replace(/\/[^\/]*$/, '/') + 
+            (this.isMobile ? "video-mobile.mp4" : "video-desktop.mp4"),
+          // Repository path approach (if in subdirectory)
+          window.location.href.split('/').slice(0, -1).join('/') + '/' + 
+            (this.isMobile ? "video-mobile.mp4" : "video-desktop.mp4")
+        ];
+        
+        let urlIndex = 0;
+        
+        const tryNextUrl = () => {
+          if (urlIndex >= possibleUrls.length) {
+            console.error('📹 All GitHub Pages video URLs failed');
+            this.videoLoadFailed = true;
+            return;
+          }
+          
+          const testUrl = possibleUrls[urlIndex];
+          console.log(`📹 Trying video URL ${urlIndex + 1}: ${testUrl}`);
+          
+          fallbackVideo.src = testUrl;
+          fallbackVideo.muted = true;
+          fallbackVideo.playsInline = true;
+          fallbackVideo.crossOrigin = "anonymous";
+          fallbackVideo.preload = "metadata";
+          
+          fallbackVideo.addEventListener('loadeddata', () => {
+            console.log(`📹 GitHub Pages fallback URL ${urlIndex + 1} successful`);
+            this.video = fallbackVideo;
+            this.videoLoadFailed = false;
+          }, { once: true });
+          
+          fallbackVideo.addEventListener('error', () => {
+            urlIndex++;
+            tryNextUrl();
+          }, { once: true });
+          
+          // Timeout for this attempt
+          setTimeout(() => {
+            if (fallbackVideo.readyState < 2) {
+              urlIndex++;
+              tryNextUrl();
+            }
+          }, 5000);
+          
+          fallbackVideo.load();
+        };
+        
+        tryNextUrl();
+      }
+
       setupEventListeners() {
         // Mouse events for desktop
         window.addEventListener('mousemove', e => {
-          if (!this.initialMouseSet) {
-            this.mouseX = e.clientX;
-            this.mouseY = e.clientY;
-            this.smoothedMouseX = e.clientX;
-            this.lastMouseX = e.clientX;
-            this.lastMouseY = e.clientY;
-            this.initialMouseSet = true;
-            this.hasUserInteracted = true;
-            this.lastMouseMoveTime = performance.now() / 1000;
-            console.log('Initial mouse position set');
-            return;
-          }
-          this.mouseX = e.clientX;
-          this.mouseY = e.clientY;
-          this.lastMouseMoveTime = performance.now() / 1000;
-          this.hasUserInteracted = true;
+          this.handlePointerMove(e.clientX, e.clientY);
         });
-        // Touch events for mobile
+
+        // Touch events for mobile with better handling
         window.addEventListener('touchmove', e => {
           e.preventDefault();
           if (e.touches.length > 0) {
-            if (!this.initialMouseSet) {
-              this.mouseX = e.touches[0].clientX;
-              this.mouseY = e.touches[0].clientY;
-              this.smoothedMouseX = e.touches[0].clientX;
-              this.lastMouseX = e.touches[0].clientX;
-              this.lastMouseY = e.touches[0].clientY;
-              this.initialMouseSet = true;
-              this.hasUserInteracted = true;
-              this.lastMouseMoveTime = performance.now() / 1000;
-              console.log('Initial touch position set');
-              return;
-            }
-            this.mouseX = e.touches[0].clientX;
-            this.mouseY = e.touches[0].clientY;
-            this.lastMouseMoveTime = performance.now() / 1000;
-            this.hasUserInteracted = true;
+            this.handlePointerMove(e.touches[0].clientX, e.touches[0].clientY);
           }
         }, { passive: false });
+
         window.addEventListener('touchstart', e => {
           if (e.touches.length > 0) {
-            this.mouseX = e.touches[0].clientX;
-            this.mouseY = e.touches[0].clientY;
-            this.lastMouseMoveTime = performance.now() / 1000;
-            this.hasUserInteracted = true;
-            // Try to start video on first touch (mobile requirement)
-            if (this.video && this.video.paused) {
-              this.video.play().then(() => {
-                console.log('Video play triggered on touchstart (mobile).');
-              }).catch(err => {
-                console.log("Video autoplay not allowed yet:", err);
-              });
+            this.handlePointerMove(e.touches[0].clientX, e.touches[0].clientY);
+            this.tryPlayVideo();
+            
+            // Log first touch for mobile debugging
+            if (!this.firstTouchLogged) {
+              console.log('📱 First touch detected:', e.touches[0].clientX, e.touches[0].clientY);
+              this.firstTouchLogged = true;
             }
           }
         });
-        window.addEventListener('resize', () => {
-          this.resizeCanvas();
+
+        window.addEventListener('click', () => {
+          this.tryPlayVideo();
         });
+
+        // Enhanced resize handling for mobile
+        window.addEventListener('resize', () => {
+          console.log(`📐 Resize event: ${window.innerWidth}x${window.innerHeight}`);
+          clearTimeout(this.resizeTimeout);
+          this.resizeTimeout = setTimeout(() => {
+            this.resizeCanvas();
+          }, 100); // Debounce resize events
+        });
+        
+        // Mobile orientation change handling
+        if (this.isMobile) {
+          window.addEventListener('orientationchange', () => {
+            console.log('📱 Orientation change detected');
+            setTimeout(() => {
+              this.resizeCanvas();
+              console.log(`📐 After orientation change: ${window.innerWidth}x${window.innerHeight}`);
+            }, 300); // Give time for orientation to complete
+          });
+          
+          // Handle mobile viewport changes
+          window.addEventListener('scroll', () => {
+            if (this.scrollTimeout) clearTimeout(this.scrollTimeout);
+            this.scrollTimeout = setTimeout(() => {
+              this.resizeCanvas();
+            }, 150);
+          });
+        }
       }
+
+      handlePointerMove(x, y) {
+        if (!this.initialMouseSet) {
+          this.mouseX = x;
+          this.mouseY = y;
+          this.smoothedMouseX = x;
+          this.lastMouseX = x;
+          this.lastMouseY = y;
+          this.initialMouseSet = true;
+          this.hasUserInteracted = true;
+          this.lastMouseMoveTime = performance.now() / 1000;
+          console.log('Initial pointer position set');
+          return;
+        }
+        
+        this.mouseX = x;
+        this.mouseY = y;
+        this.lastMouseMoveTime = performance.now() / 1000;
+        this.hasUserInteracted = true;
+      }
+
+      tryPlayVideo() {
+        if (this.video && this.video.paused && !this.videoLoadFailed) {
+          this.video.play().then(() => {
+            if (!this._playedLogged) {
+              console.log('Video playback started');
+              this._playedLogged = true;
+            }
+          }).catch(err => {
+            if (!this._playFailLogged) {
+              console.log("Video autoplay not allowed:", err);
+              this._playFailLogged = true;
+            }
+          });
+        }
+      }
+
       resizeCanvas() {
         const container = this.canvas.parentElement;
-        this.canvas.width = container.clientWidth;
-        this.canvas.height = container.clientHeight;
-        this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+        const newWidth = container.clientWidth;
+        const newHeight = container.clientHeight;
+        
+        // Avoid unnecessary resizes
+        if (this.canvas.width === newWidth && this.canvas.height === newHeight) {
+          return;
+        }
+        
+        console.log(`📐 Resizing canvas: ${this.canvas.width}x${this.canvas.height} → ${newWidth}x${newHeight}`);
+        
+        this.canvas.width = newWidth;
+        this.canvas.height = newHeight;
+        
+        if (this.gl) {
+          this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+          
+          // Mobile optimization: limit canvas size for performance
+          if (this.isMobile && this.mobileOptimizations?.reducedQuality) {
+            const maxDimension = 1024;
+            if (newWidth > maxDimension || newHeight > maxDimension) {
+              const scale = Math.min(maxDimension / newWidth, maxDimension / newHeight);
+              this.canvas.width = Math.floor(newWidth * scale);
+              this.canvas.height = Math.floor(newHeight * scale);
+              this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+              console.log(`📱 Applied mobile canvas size limit: ${this.canvas.width}x${this.canvas.height}`);
+            }
+          }
+        }
       }
+
       startFadeInSequence() {
         const canvas = this.canvas;
         const titleOverlay = document.getElementById('titleOverlay');
         console.log('Starting fade-in sequence');
+        
         setTimeout(() => {
           canvas.classList.add('fade-in');
           console.log('Canvas fade-in started');
         }, 500);
+        
         setTimeout(() => {
           titleOverlay.classList.add('fade-out');
           console.log('Title fade-out started');
         }, 3700);
       }
+
       render() {
+        if (!this.gl || !this.program) {
+          return;
+        }
+        
         const gl = this.gl;
         const now = performance.now() / 1000;
+        
+        // Mobile frame rate limiting for better performance
+        if (this.isMobile && this.lastFrameTime) {
+          const deltaTime = now - this.lastFrameTime;
+          const targetFPS = this.mobileOptimizations?.reducedQuality ? 30 : 60;
+          const targetFrameTime = 1 / targetFPS;
+          
+          if (deltaTime < targetFrameTime) {
+            requestAnimationFrame(() => this.render());
+            return;
+          }
+        }
+        this.lastFrameTime = now;
+        
         if (this.isLoaded && !this.fadeInStarted) {
           this.startFadeInSequence();
           this.fadeInStarted = true;
         }
+
         const timeSinceMove = now - this.lastMouseMoveTime;
         const isRecentlyMoved = timeSinceMove < this.moveThreshold;
+
         if (this.hasUserInteracted && isRecentlyMoved) {
           const smoothingFactor = 0.999;
           const responseFactor = 0.001;
           this.smoothedMouseX = this.smoothedMouseX * smoothingFactor + this.mouseX * responseFactor;
         }
+
         if (isRecentlyMoved && this.hasUserInteracted) {
-          if (this.video && this.video.paused) {
-            this.video.play().then(() => {
-              // Only log if it's first play
-              if (!this._playedLogged) {
-                console.log('Video play triggered in render().');
-                this._playedLogged = true;
-              }
-            }).catch(err => {
-              if (!this._playFailLogged) {
-                console.log("Video autoplay not allowed in render():", err);
-                this._playFailLogged = true;
-              }
-            });
-          }
+          this.tryPlayVideo();
         } else {
           if (this.video && !this.video.paused) {
             this.video.pause();
           }
         }
+
         if (isRecentlyMoved && this.hasUserInteracted) {
           const dx = this.mouseX - this.lastMouseX;
           const dy = this.mouseY - this.lastMouseY;
           const distance = Math.sqrt(dx * dx + dy * dy);
           this.fractalTime += distance * 0.015;
         }
+
         this.lastMouseX = this.mouseX;
         this.lastMouseY = this.mouseY;
+
         this.updateVideoTexture();
+
         gl.clearColor(0, 0, 0, 1);
         gl.clear(gl.COLOR_BUFFER_BIT);
+
         if (!this.textures || this.textures.length < 2) {
           requestAnimationFrame(() => this.render());
           return;
         }
+
         gl.useProgram(this.program);
+        
+        // Set uniforms with mobile optimizations
         gl.uniform2f(gl.getUniformLocation(this.program, 'u_resolution'), this.canvas.width, this.canvas.height);
         gl.uniform2f(gl.getUniformLocation(this.program, 'u_imageResolution'), this.imageWidth, this.imageHeight);
         gl.uniform1f(gl.getUniformLocation(this.program, 'u_time'), this.fractalTime);
         gl.uniform1f(gl.getUniformLocation(this.program, 'u_videoTime'), this.video && !this.video.paused ? this.video.currentTime : (this.pausedVideoTime || 0));
-        gl.uniform1f(gl.getUniformLocation(this.program, 'u_fractalIntensity'), 0.5);
-        gl.uniform1f(gl.getUniformLocation(this.program, 'u_dispAmount'), 0.05);
-        gl.uniform1f(gl.getUniformLocation(this.program, 'u_dispScale'), 1.0);
+        
+        // Reduce effects intensity on mobile if needed
+        const fractalIntensity = (this.isMobile && this.mobileOptimizations?.reducedEffects) ? 0.25 : 0.5;
+        gl.uniform1f(gl.getUniformLocation(this.program, 'u_fractalIntensity'), fractalIntensity);
+        gl.uniform1f(gl.getUniformLocation(this.program, 'u_dispAmount'), 0.15);
+        gl.uniform1f(gl.getUniformLocation(this.program, 'u_dispScale'), 1.5);
         gl.uniform1f(gl.getUniformLocation(this.program, 'u_imageCount'), this.imagePaths.length);
+
         const rawTransition = this.hasUserInteracted ?
           (this.smoothedMouseX / this.canvas.width) :
           0.5;
         const t = Math.max(0, Math.min(0.999, rawTransition)) * this.transitionMultiplier;
         gl.uniform1f(gl.getUniformLocation(this.program, 'u_transition'), t);
+
         if (this.video && this.video.paused && !this.pausedVideoTime) {
           this.pausedVideoTime = this.video.currentTime;
         } else if (this.video && !this.video.paused) {
           this.pausedVideoTime = null;
         }
+
         const baseIndex = this.getRandomizedIndex(t);
         const nextIndex = this.getRandomizedIndex(Math.min(0.999, t + 0.02));
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, this.textures[baseIndex]);
-        gl.uniform1i(gl.getUniformLocation(this.program, 'u_image0'), 0);
-        gl.activeTexture(gl.TEXTURE1);
-        gl.bindTexture(gl.TEXTURE_2D, this.textures[nextIndex]);
-        gl.uniform1i(gl.getUniformLocation(this.program, 'u_image1'), 1);
-        gl.activeTexture(gl.TEXTURE2);
-        gl.bindTexture(gl.TEXTURE_2D, this.dispVideoTexture);
-        gl.uniform1i(gl.getUniformLocation(this.program, 'u_dispVideo'), 2);
-        gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+        // Bind textures with error handling
+        try {
+          gl.activeTexture(gl.TEXTURE0);
+          gl.bindTexture(gl.TEXTURE_2D, this.textures[baseIndex] || this.fallbackTexture);
+          gl.uniform1i(gl.getUniformLocation(this.program, 'u_image0'), 0);
+
+          gl.activeTexture(gl.TEXTURE1);
+          gl.bindTexture(gl.TEXTURE_2D, this.textures[nextIndex] || this.fallbackTexture);
+          gl.uniform1i(gl.getUniformLocation(this.program, 'u_image1'), 1);
+
+          gl.activeTexture(gl.TEXTURE2);
+          gl.bindTexture(gl.TEXTURE_2D, this.dispVideoTexture);
+          gl.uniform1i(gl.getUniformLocation(this.program, 'u_dispVideo'), 2);
+
+          gl.drawArrays(gl.TRIANGLES, 0, 6);
+          
+          // Check for WebGL errors on mobile (only occasionally to avoid performance impact)
+          if (this.isMobile && Math.random() < 0.01) {
+            const error = gl.getError();
+            if (error !== gl.NO_ERROR) {
+              console.warn('WebGL error detected:', error);
+            }
+          }
+        } catch (error) {
+          console.error('Render error:', error);
+          // Continue rendering even if there's an error
+        }
+
         requestAnimationFrame(() => this.render());
       }
     }
+
     window.addEventListener('load', () => {
       new OrganicFluidTransition();
     });
